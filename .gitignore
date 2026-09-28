@@ -1,3 +1,4 @@
 videos/
 data.json
 .DS_Store
+cache/

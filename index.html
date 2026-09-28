@@ -37,24 +37,42 @@
   .card .sub { color:var(--mute); font-size:12px; margin-top:2px; }
   #empty { text-align:center; color:var(--mute); padding:80px 16px; }
   #drop { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:rgba(59,91,253,.15); border:3px dashed var(--accent); font-size:22px; font-weight:700; pointer-events:none; }
-  dialog { width:min(1100px, 94vw); max-height:92vh; padding:0; border:0; border-radius:16px; background:var(--card); color:var(--fg); }
+  dialog { width:min(1320px, 96vw); height:min(900px, 92vh); padding:0; border:0; border-radius:16px; background:var(--card); color:var(--fg); overflow:hidden; }
   dialog::backdrop { background:rgba(0,0,0,.7); }
-  .detail { display:grid; grid-template-columns:minmax(0,1fr) 360px; }
-  #player { background:#000; display:grid; place-items:center; min-height:300px; }
-  #player video { width:100%; max-height:88vh; display:block; }
-  #player iframe { width:min(100%,420px); height:min(80vh,760px); border:0; display:block; }
-  .side { padding:16px; display:flex; flex-direction:column; gap:10px; overflow:auto; max-height:88vh; }
+  .detail { display:grid; grid-template-columns:400px minmax(0,1fr); height:100%; }
+  .left { display:flex; flex-direction:column; overflow:auto; border-right:1px solid var(--line); }
+  #player { background:#000; display:grid; place-items:center; min-height:320px; }
+  #player video { width:100%; max-height:62vh; display:block; }
+  #player iframe { width:100%; height:62vh; border:0; display:block; }
+  .side { padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
   .side h3 { margin:0; font-size:16px; line-height:1.35; }
   .side input, .side textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:inherit; font:inherit; }
-  .side textarea { min-height:90px; resize:vertical; }
+  .side textarea { min-height:80px; resize:vertical; }
   .side label { font-size:12px; color:var(--mute); }
-  .row { display:flex; gap:8px; flex-wrap:wrap; }
-  #script { border:1px solid var(--line); border-radius:8px; max-height:280px; overflow:auto; font-size:13px; }
-  #script div { display:flex; gap:10px; padding:4px 10px; cursor:pointer; }
-  #script div:hover { background:var(--bg); }
-  #script time { color:var(--accent); font-variant-numeric:tabular-nums; flex:none; }
-  .muted { color:var(--mute); font-size:12px; padding:8px 10px; }
-  @media (max-width:760px) { .detail { grid-template-columns:1fr; } #player video { max-height:60vh; } .side { max-height:none; } header b { display:none; } }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .row .btn, .row button { padding:7px 12px; font-size:13px; }
+  .right { display:flex; flex-direction:column; min-height:0; }
+  .tabs { display:flex; gap:22px; padding:16px 20px 0; border-bottom:1px solid var(--line); align-items:flex-end; }
+  .tabs button { background:none; color:var(--mute); border-radius:0; padding:6px 0 10px; border-bottom:2px solid transparent; font-size:15px; }
+  .tabs button.on { color:var(--fg); border-color:var(--fg); }
+  .tabs .x { margin-left:auto; font-size:20px; }
+  .pane { flex:1; overflow:auto; padding:16px 20px; }
+  .note { color:var(--mute); font-size:12px; margin-bottom:10px; }
+  .scene { display:grid; grid-template-columns:88px 92px minmax(0,1fr); gap:14px; padding:10px 8px; border-bottom:1px solid var(--line); cursor:pointer; align-items:start; }
+  .scene:hover { background:var(--bg); }
+  .scene.on { background:color-mix(in srgb, var(--accent) 12%, transparent); box-shadow:inset 3px 0 var(--accent); }
+  .scene img { width:88px; border-radius:6px; display:block; }
+  .scene time { color:var(--accent); font-variant-numeric:tabular-nums; font-size:13px; }
+  .scene .say { font-size:14px; }
+  .scene .say.none { color:var(--mute); }
+  .scene .ocr { color:var(--mute); font-size:12px; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .scene .ocr::before { content:'화면 글자 · '; font-weight:600; }
+  #simGrid { columns:4 180px; column-gap:10px; }
+  .muted { color:var(--mute); font-size:13px; padding:8px 0; }
+  .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:r 1s linear infinite; vertical-align:-2px; margin-right:6px; }
+  @keyframes r { to { transform:rotate(360deg); } }
+  #cat { padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; }
+  @media (max-width:860px) { dialog { height:auto; max-height:94vh; overflow:auto; } .detail { grid-template-columns:1fr; height:auto; } .left { border:0; overflow:visible; } #player iframe { height:60vh; } .pane { overflow:visible; } .scene { grid-template-columns:64px 80px minmax(0,1fr); } .scene img { width:64px; } header b { display:none; } }
 </style>
 </head>
 <body>
@@ -68,6 +86,7 @@
   <button class="chip" data-tab="board">내 보드 <span id="cnt"></span></button>
   <span id="srcs"><span style="color:var(--mute);margin:0 4px 0 10px">플랫폼</span></span>
   <span id="periods"><span style="color:var(--mute);margin:0 4px 0 10px">게시 일시</span><button class="chip" data-p="">전체</button> <button class="chip" data-p="w">최근 7일</button> <button class="chip" data-p="m">최근 30일</button> <button class="chip" data-p="y">최근 1년</button></span>
+  <span id="cats"><span style="color:var(--mute);margin:0 4px 0 10px">카테고리</span><select id="cat"><option value="">전체</option></select></span>
   <span style="width:8px"></span>
   <span id="tags"></span>
 </nav>
@@ -78,23 +97,33 @@
 
 <dialog id="dlg">
   <div class="detail">
-    <div id="player"></div>
-    <div class="side">
-      <h3 id="dTitle"></h3>
-      <div class="muted" id="dSub" style="padding:0"></div>
-      <div class="row">
-        <button id="saveBtn">보드에 저장</button>
-        <button class="ghost" id="more">비슷한 영상 더 찾기</button>
-        <a class="btn ghost" id="outLink" target="_blank" rel="noopener">원본 보기</a>
+    <div class="left">
+      <div id="player"></div>
+      <div class="side">
+        <div class="row">
+          <a class="btn ghost" id="dlThumb" download hidden>썸네일</a>
+          <a class="btn ghost" id="dlVideo" download hidden>영상</a>
+          <a class="btn ghost" id="outLink" target="_blank" rel="noopener">원본 보기</a>
+          <button id="saveBtn">보드에 저장</button>
+        </div>
+        <h3 id="dTitle"></h3>
+        <div class="muted" id="dSub" style="padding:0"></div>
+        <div id="edit" class="side" style="padding:0">
+          <label>제목<input id="dt"></label>
+          <label>태그 (쉼표로 구분)<input id="dg" placeholder="카페, 인테리어, 릴스"></label>
+          <label>메모<textarea id="dm" placeholder="참고 포인트, 카피…"></textarea></label>
+          <div class="row"><button id="saveEdit">저장</button><button class="ghost" id="del">삭제</button></div>
+        </div>
       </div>
-      <div id="edit" class="side" style="padding:0;overflow:visible">
-        <label>제목<input id="dt"></label>
-        <label>태그 (쉼표로 구분)<input id="dg" placeholder="카페, 인테리어, 릴스"></label>
-        <label>메모<textarea id="dm" placeholder="참고 포인트, 카피…"></textarea></label>
-        <div class="row"><button id="saveEdit">저장</button><button class="ghost" id="del">삭제</button></div>
+    </div>
+    <div class="right">
+      <div class="tabs">
+        <button data-pane="scenes" class="on">스크립트·장면</button>
+        <button data-pane="similar">유사한 미디어</button>
+        <button class="x" id="close" aria-label="닫기">✕</button>
       </div>
-      <label>스크립트 (시간 누르면 그 장면으로)</label>
-      <div id="script"></div>
+      <div class="pane" id="scenes"></div>
+      <div class="pane" id="similar" hidden><div id="simGrid"></div></div>
     </div>
   </div>
 </dialog>
@@ -109,10 +138,11 @@ const SRC = {
   pin: { name: '핀터레스트', embed: (r) => `https://assets.pinterest.com/ext/embed.html?id=${r}`, light: true },
   th: { name: '스레드', embed: (r) => `https://www.threads.com/${r}/embed`, light: true },
 };
+const CATS = ['뷰티', '패션', '식품', '건강기능식품·이너뷰티', '다이어트·프로틴', '외식', '가전·디지털', '유아·출산', '생활용품', '리빙·인테리어', '주방용품', '펫', '스포츠·레저', '교육', '여행·숙박', '의료 서비스', '뷰티·웰니스 서비스', '금융·보험', '게임', '자동차·모빌리티 용품', '오피스·문구', 'IT·SaaS', '프랜차이즈·창업', '부동산', '통신·인터넷'];
+$('#cat').insertAdjacentHTML('beforeend', CATS.map((c) => `<option>${c}</option>`).join(''));
 let src = 'all', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
 
 const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
-const mmss = (n) => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
 const srcName = () => (src === 'all' ? '전체' : SRC[src].name);
 const fileSrc = (v) => '/videos/' + encodeURIComponent(v.file);
 
@@ -138,7 +168,7 @@ function render() {
   $('#cnt').textContent = board.length || '';
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#upBtn').hidden = tab !== 'board';
-  $('#srcs').hidden = $('#periods').hidden = tab !== 'search';
+  $('#srcs').hidden = $('#periods').hidden = $('#cats').hidden = tab !== 'search';
   document.querySelectorAll('[data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === period));
   document.querySelectorAll('[data-src]').forEach((b) => b.classList.toggle('on', b.dataset.src === src));
   let list = results;
@@ -165,12 +195,13 @@ async function search(q) {
   $('#q').value = q;
   $('#status').textContent = `${srcName()}에서 "${q}" 찾는 중…`;
   render();
-  const want = src + period;
+  const want = src + period + $('#cat').value;
   try {
-    const r = await fetch(`/api/search?src=${src}&period=${period}&q=` + encodeURIComponent(q));
+    const cat = $('#cat').value.replace(/·/g, ' ');
+    const r = await fetch(`/api/search?src=${src}&period=${period}&q=` + encodeURIComponent(cat ? `${q} ${cat}` : q));
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
-    if (q !== lastQuery || want !== src + period) return; // a newer search started meanwhile
+    if (q !== lastQuery || want !== src + period + $('#cat').value) return; // a newer search started meanwhile
     results = d;
     const failed = (r.headers.get('x-failed') || '').split(',').filter(Boolean).map((k) => SRC[k].name);
     $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개` + (failed.length ? ` · ${failed.join(', ')}은(는) 못 불러왔어요 (다시 검색하면 재시도)` : '');
@@ -182,21 +213,89 @@ async function search(q) {
 
 async function loadBoard() { board = await (await fetch('/api/videos')).json(); render(); }
 
-async function loadScript(id) {
-  $('#script').innerHTML = '<div class="muted">스크립트 불러오는 중…</div>';
+const fmt = (n) => Math.floor(n / 60) + ':' + String(Math.floor(n % 60)).padStart(2, '0');
+// "Similar" query: the post's own hashtags say best what it's about; else the search that found it; else its first words.
+function similarQuery(v) {
+  const tags = [...(v.title || '').matchAll(/#([^\s#]+)/g)].map((m) => m[1]).slice(0, 2);
+  if (tags.length) return tags.join(' ');
+  if (lastQuery) return lastQuery;
+  return (v.title || '').replace(/@\S+|\[[^\]]*\]|[|｜\-_:!?().…,]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 3).join(' ');
+}
+let analysis = null, openSeq = 0; // openSeq: ignore late responses for a video that's no longer open
+
+function analyzeUrl(v) {
+  return v.file ? '/api/analyze?id=' + v.id : `/api/analyze?src=${v.src}&ref=${encodeURIComponent(v.ref)}&url=${encodeURIComponent(v.url)}`;
+}
+
+async function loadAnalysis(v, seq) {
+  analysis = null;
+  const box = $('#scenes');
+  box.innerHTML = '<div class="muted"><span class="spin"></span>영상을 받아서 장면을 나누고 대사·화면 글자를 읽는 중… (처음 한 번 10~60초)</div>';
   try {
-    const lines = await (await fetch('/api/script?id=' + id)).json();
-    if (current?.ref !== id) return;
-    $('#script').innerHTML = lines.length
-      ? lines.map(([s, t]) => `<div data-s="${s}"><time>${mmss(s)}</time><span>${esc(t)}</span></div>`).join('')
-      : '<div class="muted">자막이 없는 영상이에요.</div>';
-  } catch { $('#script').innerHTML = '<div class="muted">스크립트를 못 불러왔어요.</div>'; }
+    const r = await fetch(analyzeUrl(v));
+    const d = await r.json();
+    if (seq !== openSeq) return;
+    if (!r.ok) throw new Error(d.error);
+    analysis = d;
+    // Play the downloaded file so scene clicks can seek exactly.
+    $('#player').innerHTML = `<video src="${d.video}" controls playsinline autoplay></video>`;
+    const vid = $('#player video');
+    vid.ontimeupdate = () => highlight(vid.currentTime);
+    $('#dlVideo').href = d.video; $('#dlVideo').hidden = false;
+    if (d.scenes[0]) { $('#dlThumb').href = d.scenes[0].img; $('#dlThumb').hidden = false; }
+    // Each spoken line goes under the scene it starts in, so a long line isn't repeated across quick cuts.
+    const sceneOf = (t) => Math.max(0, d.scenes.findLastIndex((s) => s.start <= t + 0.05));
+    const said = d.scenes.map(() => []);
+    d.script.forEach(([a, , t]) => said[sceneOf(a)]?.push(t));
+    const how = { captions: '유튜브 자막', whisper: 'AI 음성 인식(Whisper)으로 자동 생성' }[d.scriptSource] || '대사를 찾지 못했어요';
+    box.innerHTML = `<div class="note">장면 ${d.scenes.length}개 · 대사: ${how} · 화면 글자: 이미지 인식(OCR)</div>` +
+      d.scenes.map((s, i) => {
+        const say = said[i].join(' ');
+        return `<div class="scene" data-s="${s.start}" data-i="${i}">
+          <img src="${s.img}" loading="lazy" alt="">
+          <time>${fmt(s.start)}–${fmt(s.end)}</time>
+          <div><div class="say ${say ? '' : 'none'}">${say ? esc(say) : '대사 없음'}</div>${s.text ? `<div class="ocr">${esc(s.text)}</div>` : ''}</div>
+        </div>`;
+      }).join('');
+  } catch (e) {
+    if (seq === openSeq) box.innerHTML = `<div class="muted">분석하지 못했어요: ${esc(e.message)}</div>`;
+  }
+}
+
+function highlight(t) {
+  if (!analysis) return;
+  const i = analysis.scenes.findIndex((s) => t >= s.start && t < s.end);
+  document.querySelectorAll('.scene').forEach((el) => el.classList.toggle('on', Number(el.dataset.i) === i));
+}
+
+async function loadSimilar(v, seq) {
+  const q = similarQuery(v);
+  const g = $('#simGrid');
+  if (!q) { g.innerHTML = '<div class="muted">제목이 없어서 비슷한 걸 찾을 수 없어요.</div>'; return; }
+  g.innerHTML = `<div class="muted"><span class="spin"></span>"${esc(q)}" 비슷한 소재 찾는 중…</div>`;
+  try {
+    const s = v.src && SRC[v.src] ? v.src : 'yt';
+    const r = await fetch(`/api/search?src=${s}&q=` + encodeURIComponent(q));
+    const d = await r.json();
+    if (seq !== openSeq) return;
+    if (!r.ok) throw new Error(d.error);
+    window.similar = d.filter((o) => o.ref !== v.ref);
+    g.innerHTML = window.similar.length ? window.similar.map(card).join('') : '<div class="muted">비슷한 걸 못 찾았어요.</div>';
+  } catch (e) { g.innerHTML = `<div class="muted">못 불러왔어요: ${esc(e.message)}</div>`; }
+}
+
+function showPane(name) {
+  document.querySelectorAll('[data-pane]').forEach((b) => b.classList.toggle('on', b.dataset.pane === name));
+  $('#scenes').hidden = name !== 'scenes';
+  $('#similar').hidden = name !== 'similar';
+  if (name === 'similar' && !$('#simGrid').dataset.for) { $('#simGrid').dataset.for = '1'; loadSimilar(current, openSeq); }
 }
 
 function open(v) {
-  current = v;
+  const seq = ++openSeq;
   const S = SRC[v.src];
   const saved = v.id ? v : board.find((b) => b.src === v.src && b.ref === v.ref);
+  current = saved || v;
   $('#player').innerHTML = S
     ? `<iframe class="${S.light ? 'light' : ''}" src="${esc(v.src === 'yt' ? S.embed(v.ref, '&autoplay=1') : S.embed(v.ref))}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
     : `<video src="${fileSrc(v)}" controls playsinline loop autoplay></video>`;
@@ -205,11 +304,14 @@ function open(v) {
   $('#saveBtn').hidden = !S || !!saved;
   $('#outLink').hidden = !S;
   $('#outLink').href = v.url || '#';
+  $('#dlThumb').hidden = $('#dlVideo').hidden = true;
   $('#edit').hidden = !saved;
-  if (saved) { current = saved; $('#dt').value = saved.title; $('#dg').value = saved.tags.join(', '); $('#dm').value = saved.memo; }
-  $('#script').previousElementSibling.hidden = $('#script').hidden = v.src !== 'yt';
-  if (v.src === 'yt') loadScript(v.ref);
+  if (saved) { $('#dt').value = saved.title; $('#dg').value = saved.tags.join(', '); $('#dm').value = saved.memo; }
+  delete $('#simGrid').dataset.for;
+  $('#simGrid').innerHTML = '';
+  showPane('scenes');
   if (!$('#dlg').open) $('#dlg').showModal();
+  loadAnalysis(current, seq);
 }
 
 async function upload(files) {
@@ -238,6 +340,7 @@ document.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => {
   period = b.dataset.p;
   if (lastQuery) search(lastQuery); else render();
 });
+$('#cat').onchange = () => { if (lastQuery) search(lastQuery); };
 $('#tags').onclick = (e) => { const t = e.target.dataset.t; if (t) { activeTag = activeTag === t ? null : t; render(); } };
 $('#grid').onclick = (e) => { const c = e.target.closest('.card'); if (c) open(window.shown[c.dataset.i]); };
 
@@ -249,10 +352,14 @@ $('#grid').addEventListener('mouseover', (e) => {
   c.addEventListener('mouseleave', () => c.querySelector('iframe')?.remove(), { once: true });
 });
 
-$('#script').onclick = (e) => {
-  const s = e.target.closest('[data-s]')?.dataset.s;
-  if (s && current?.src === 'yt') $('#player iframe').src = SRC.yt.embed(current.ref, `&autoplay=1&start=${s}`);
+$('#scenes').onclick = (e) => {
+  const row = e.target.closest('[data-s]');
+  const vid = $('#player video');
+  if (row && vid) { vid.currentTime = Number(row.dataset.s) + 0.01; vid.play().catch(() => {}); highlight(vid.currentTime); }
 };
+document.querySelectorAll('[data-pane]').forEach((b) => b.onclick = () => showPane(b.dataset.pane));
+$('#simGrid').onclick = (e) => { const c = e.target.closest('.card'); if (c) open(window.similar[c.dataset.i]); };
+$('#close').onclick = () => $('#dlg').close();
 $('#saveBtn').onclick = async () => {
   const r = await fetch('/api/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(current) });
   const item = await r.json();
@@ -261,11 +368,6 @@ $('#saveBtn').onclick = async () => {
   current = item;
   $('#saveBtn').hidden = true; $('#edit').hidden = false;
   $('#dt').value = item.title; $('#dg').value = item.tags.join(', '); $('#dm').value = item.memo;
-};
-$('#more').onclick = () => {
-  const q = current.title.replace(/#\S+|@\S+|\[[^\]]*\]|[|｜\-_:!?().…]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 5).join(' ');
-  $('#dlg').close();
-  search(q || current.title);
 };
 $('#saveEdit').onclick = async () => {
   await fetch('/api/videos/' + current.id, { method: 'PATCH', headers: { 'content-type': 'application/json' },
@@ -280,7 +382,7 @@ $('#del').onclick = async () => {
   loadBoard();
 };
 $('#file').onchange = (e) => { upload(e.target.files); e.target.value = ''; };
-$('#dlg').onclose = () => { $('#player').innerHTML = ''; };
+$('#dlg').onclose = () => { $('#player').innerHTML = ''; current = null; openSeq++; };
 $('#dlg').onclick = (e) => { if (e.target === $('#dlg')) $('#dlg').close(); };
 
 let depth = 0;

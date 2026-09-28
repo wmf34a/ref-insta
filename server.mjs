@@ -4,9 +4,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.dirname(new URL(import.meta.url).pathname);
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const WIN = process.platform === 'win32';
 const VIDEO_DIR = path.join(ROOT, 'videos');
 const DATA = path.join(ROOT, 'data.json');
 const PORT = Number(process.env.PORT) || 5173;
@@ -54,10 +57,29 @@ const linkOk = (src, link) => {
 
 const PERIODS = new Set(['w', 'm', 'y']); // past week / month / year (Google-style qdr filter)
 
+// Firecrawl web search. With FIRECRAWL_API_KEY set, call the REST API directly (works on Windows too);
+// otherwise use the logged-in `firecrawl` CLI (macOS/Linux — Windows can't spawn its .cmd shim without a shell).
+async function webSearch(query, period) {
+  const tbs = period ? `qdr:${period}` : undefined;
+  const key = process.env.FIRECRAWL_API_KEY;
+  if (key) {
+    const r = await fetch('https://api.firecrawl.dev/v2/search', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ query, limit: 40, ...(tbs && { tbs }) }),
+    });
+    if (r.status === 429) throw new Error('검색 한도를 넘었어요. 1분쯤 뒤에 다시 해보세요.');
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `Firecrawl ${r.status}`);
+    return j.data?.web || [];
+  }
+  if (WIN) throw new Error('Windows에서는 FIRECRAWL_API_KEY 환경 변수를 설정해 주세요.');
+  return (await runJson('firecrawl', ['search', query, '--limit', '40', '--json', ...(tbs ? ['--tbs', tbs] : [])])).data?.web || [];
+}
+
 async function searchSource(src, q, period) {
   const { site, re } = SOURCES[src];
-  const args = ['search', `site:${site} ${q}`, '--limit', '40', '--json', ...(period ? ['--tbs', `qdr:${period}`] : [])];
-  const hits = (await runJson('firecrawl', args)).data?.web || [];
+  const hits = await webSearch(`site:${site} ${q}`, period);
   const seen = new Set(); // the same post often shows up under several URLs; drop repeats by id and by caption
   return hits
     .map((r) => {
@@ -104,24 +126,27 @@ const run = (bin, args, timeout = 300_000) =>
       e ? fail(new Error((err || e.message).trim().split('\n').pop())) : ok(out + err),
     ),
   );
-const has = (bin) => run('which', [bin]).then(() => true, () => false);
+const has = (bin) => run(WIN ? 'where' : 'which', [bin]).then(() => true, () => false);
 const OCR_BIN = path.join(CACHE_DIR, 'ocr');
 
-// macOS Vision OCR (no install needed); compiled once from ocr.swift.
+// macOS Vision OCR (no install needed); compiled once from ocr.swift. Other OSes skip OCR.
 async function ocr(files) {
+  if (process.platform !== 'darwin') return [];
   if (!fs.existsSync(OCR_BIN)) await run('swiftc', ['-O', path.join(ROOT, 'ocr.swift'), '-o', OCR_BIN]);
   return JSON.parse(await run(OCR_BIN, files).then((o) => o.slice(o.indexOf('['), o.lastIndexOf(']') + 1)));
 }
 
-// Speech-to-text for videos without captions via whisper.cpp (`brew install whisper-cpp`).
+// Speech-to-text for videos without captions via whisper.cpp (mac: `brew install whisper-cpp`;
+// Windows: whisper-bin-x64.zip from its GitHub releases — put whisper-cli.exe on PATH or set WHISPER_CLI).
 // Model: WHISPER_MODEL, or ~/.cache/whisper/ggml-small-q5_1.bin (from huggingface.co/ggerganov/whisper.cpp).
-const WHISPER_MODEL = process.env.WHISPER_MODEL || path.join(process.env.HOME || '', '.cache/whisper/ggml-small-q5_1.bin');
+const WHISPER_MODEL = process.env.WHISPER_MODEL || path.join(os.homedir(), '.cache', 'whisper', 'ggml-small-q5_1.bin');
+const WHISPER_CLI = process.env.WHISPER_CLI || 'whisper-cli';
 async function transcribe(dir) {
   const model = WHISPER_MODEL;
-  if (!fs.existsSync(model) || !(await has('whisper-cli'))) return null;
+  if (!fs.existsSync(model) || !(fs.existsSync(WHISPER_CLI) || (await has(WHISPER_CLI)))) return null;
   const wav = path.join(dir, 'audio.wav');
   await run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(dir, 'video.mp4'), '-ar', '16000', '-ac', '1', wav]);
-  await run('whisper-cli', ['-m', model, '-l', 'auto', '-sns', '-oj', '-of', path.join(dir, 'whisper'), '-f', wav]);
+  await run(WHISPER_CLI, ['-m', model, '-l', 'auto', '-sns', '-oj', '-of', path.join(dir, 'whisper'), '-f', wav]);
   const j = JSON.parse(fs.readFileSync(path.join(dir, 'whisper.json'), 'utf8'));
   return (j.transcription || []).map((s) => [s.offsets.from / 1000, s.offsets.to / 1000, s.text.trim()]).filter(([, , t]) => t && !hallucinated(t));
 }

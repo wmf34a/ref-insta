@@ -29,7 +29,7 @@
   .media.ig { aspect-ratio:9/15; background:var(--bg); overflow:hidden; }
   .media.ig .cap { position:absolute; inset:0; padding:14px; color:var(--mute); font-size:13px; overflow:hidden; }
   .media.ig iframe { background:transparent; }
-  #player .igp { width:min(100%,420px); height:min(80vh,760px); aspect-ratio:auto; background:#fff; }
+  #player .igp { background:#fff; }
   .dur { position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.75); color:#fff; font-size:11px; padding:1px 6px; border-radius:4px; }
   .card .meta { padding:8px 10px 10px; }
   .card .t { font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
@@ -41,7 +41,7 @@
   .detail { display:grid; grid-template-columns:minmax(0,1fr) 360px; }
   #player { background:#000; display:grid; place-items:center; min-height:300px; }
   #player video { width:100%; max-height:88vh; display:block; }
-  #player iframe { width:100%; aspect-ratio:16/9; border:0; display:block; }
+  #player iframe { width:min(100%,420px); height:min(80vh,760px); border:0; display:block; }
   .side { padding:16px; display:flex; flex-direction:column; gap:10px; overflow:auto; max-height:88vh; }
   .side h3 { margin:0; font-size:16px; line-height:1.35; }
   .side input, .side textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:inherit; font:inherit; }
@@ -65,7 +65,7 @@
 <nav>
   <button class="chip on" data-tab="search">레퍼런스 찾기</button>
   <button class="chip" data-tab="board">내 보드 <span id="cnt"></span></button>
-  <span id="srcs"><span style="color:var(--mute);margin:0 4px 0 10px">출처</span><button class="chip on" data-src="yt">유튜브</button> <button class="chip" data-src="ig">인스타</button></span>
+  <span id="srcs"><span style="color:var(--mute);margin:0 4px 0 10px">출처</span><button class="chip on" data-src="yt">유튜브 쇼츠</button> <button class="chip" data-src="ig">인스타 릴스</button></span>
   <span style="width:8px"></span>
   <span id="tags"></span>
 </nav>
@@ -106,7 +106,7 @@ const mmss = (n) => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
 const views = (n) => n == null ? '' : n >= 1e4 ? (n / 1e4).toFixed(1).replace('.0', '') + '만회' : n.toLocaleString() + '회';
 const embed = (id, o = '') => `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0${o}`;
 const igUrl = (code) => `https://www.instagram.com/reel/${code}/`;
-const srcName = () => (src === 'ig' ? '인스타' : '유튜브');
+const srcName = () => (src === 'ig' ? '릴스' : '쇼츠');
 const fileSrc = (v) => '/videos/' + encodeURIComponent(v.file);
 
 // Uploaded files autoplay (muted) only while on screen, so a long grid stays light.

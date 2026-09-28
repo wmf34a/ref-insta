@@ -14,7 +14,7 @@ const MIME = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quickt
 
 fs.mkdirSync(VIDEO_DIR, { recursive: true });
 
-// yt-dlp does the YouTube search/caption lookup; execFile (no shell) keeps the query out of shell parsing.
+// execFile (no shell) keeps the search query out of shell parsing.
 const runJson = (bin, args) =>
   new Promise((ok, fail) =>
     execFile(bin, args, { maxBuffer: 64 << 20, timeout: 60_000 }, (e, out) => (e ? fail(e) : ok(JSON.parse(out)))),
@@ -27,38 +27,34 @@ const cached = async (key, fn) => {
   return cache.get(key);
 };
 
-async function searchYouTube(q) {
-  // sp=EgIYAQ== is YouTube's "under 4 minutes" filter — keeps results short-form.
-  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIYAQ%3D%3D`;
-  const run = async () => (await ytdlp(['--flat-playlist', '-J', '--playlist-end', '40', url])).entries || [];
-  // YouTube sometimes returns a thin first page (seen: 5 vs 21 for the same query); retry once and keep the bigger one.
-  let entries = await run();
-  if (entries.length < 10) entries = [entries, await run()].sort((a, b) => b.length - a.length)[0];
-  return entries
-    .filter((e) => e.id && e.duration)
-    .map((e) => ({
-      yt: e.id,
-      title: e.title,
-      channel: e.channel,
-      duration: e.duration,
-      views: e.view_count,
-      thumb: e.thumbnails?.at(-1)?.url || `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg`,
-    }));
+// Neither YouTube nor Instagram offers a public short-form search, so find Shorts/Reels through a
+// web search (Firecrawl, site: filter) and play them with each platform's own embed.
+const webSearch = async (site, q) =>
+  (await runJson('firecrawl', ['search', `site:${site} ${q}`, '--limit', '40', '--json'])).data?.web || [];
+const dedupe = (key) => {
+  // The same post often shows up under several URLs; drop repeats by id and by caption.
+  const seen = new Set();
+  return (v) => v && !seen.has(v[key]) && !seen.has(v.title) && seen.add(v[key]).add(v.title);
+};
+
+async function searchShorts(q) {
+  return (await webSearch('youtube.com/shorts', q))
+    .map((r) => {
+      const id = /youtube\.com\/shorts\/([\w-]{11})/.exec(r.url)?.[1];
+      return id && { yt: id, title: (r.title || '').replace(/ - YouTube$/, ''), thumb: `https://i.ytimg.com/vi/${id}/oar2.jpg` };
+    })
+    .filter(dedupe('yt'));
 }
 
-// Instagram has no public search, so find reels through a web search (Firecrawl) and show them with Instagram's own embed.
-async function searchInstagram(q) {
-  const j = await runJson('firecrawl', ['search', `site:instagram.com/reel ${q}`, '--limit', '40', '--json']);
-  const seen = new Set();
-  return (j.data?.web || [])
+async function searchReels(q) {
+  return (await webSearch('instagram.com/reel', q))
     .map((r) => {
       const code = /instagram\.com\/(?:[\w.]+\/)?(?:reel|reels|p)\/([\w-]+)/.exec(r.url)?.[1];
       // Descriptions look like: '3 likes, 0 comments - c_pop_studio on June 11, 2025: "caption…'
       const m = /^([\d,.KkMm]+) likes?.*? - ([\w.]+) on [^:]+: "?(.*)/.exec(r.description || '');
       return code && { ig: code, title: (m?.[3] || r.title || '').replace(/ - Instagram$/, ''), channel: m?.[2] || '', likes: m?.[1] || '' };
     })
-    // The same post often shows up under several URLs; drop repeats by code and by caption.
-    .filter((v) => v && !seen.has(v.ig) && !seen.has(v.title) && seen.add(v.ig).add(v.title));
+    .filter(dedupe('ig'));
 }
 
 async function fetchScript(id) {
@@ -127,7 +123,7 @@ http
         const q = (url.searchParams.get('q') || '').trim();
         if (!q) return json(res, 400, { error: '검색어가 비었어요' });
         const src = url.searchParams.get('src') === 'ig' ? 'ig' : 'yt';
-        return json(res, 200, await cached(src + ':' + q, () => (src === 'ig' ? searchInstagram(q) : searchYouTube(q))));
+        return json(res, 200, await cached(src + ':' + q, () => (src === 'ig' ? searchReels(q) : searchShorts(q))));
       }
       if (req.method === 'GET' && p === '/api/script') {
         const id = url.searchParams.get('id') || '';

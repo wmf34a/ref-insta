@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ref</title>
+<style>
+  :root { --bg:#f6f6f4; --card:#fff; --fg:#161616; --mute:#777; --line:#e3e3df; --accent:#3b5bfd; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111; --card:#1c1c1c; --fg:#eee; --mute:#999; --line:#2c2c2c; } }
+  * { box-sizing: border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system, "Pretendard", system-ui, sans-serif; }
+  header { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; padding:12px 16px; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  header b { font-size:18px; letter-spacing:-.5px; }
+  form { flex:1; min-width:0; display:flex; }
+  #q { flex:1; min-width:0; padding:10px 16px; border:1px solid var(--line); border-radius:999px; background:var(--card); color:inherit; font:inherit; font-size:15px; }
+  button, .btn { padding:9px 14px; border:0; border-radius:999px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; text-decoration:none; }
+  button.ghost, a.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
+  nav { display:flex; gap:6px; padding:12px 16px 0; flex-wrap:wrap; align-items:center; }
+  .chip { padding:5px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font-weight:500; }
+  .chip.on { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+  #tags { display:contents; }
+  #status { color:var(--mute); padding:0 16px; margin-top:10px; }
+  #grid { columns:5 220px; column-gap:12px; padding:16px; }
+  .card { break-inside:avoid; margin-bottom:12px; background:var(--card); border-radius:12px; overflow:hidden; cursor:pointer; border:1px solid var(--line); }
+  .media { position:relative; background:#000; }
+  .media img, .media video { width:100%; display:block; }
+  .media iframe { position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; }
+  .media.ig { aspect-ratio:9/15; background:var(--bg); overflow:hidden; }
+  .media.ig .cap { position:absolute; inset:0; padding:14px; color:var(--mute); font-size:13px; overflow:hidden; }
+  .media.ig iframe { background:transparent; }
+  #player .igp { width:min(100%,420px); height:min(80vh,760px); aspect-ratio:auto; background:#fff; }
+  .dur { position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.75); color:#fff; font-size:11px; padding:1px 6px; border-radius:4px; }
+  .card .meta { padding:8px 10px 10px; }
+  .card .t { font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .card .sub { color:var(--mute); font-size:12px; margin-top:2px; }
+  #empty { text-align:center; color:var(--mute); padding:80px 16px; }
+  #drop { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:rgba(59,91,253,.15); border:3px dashed var(--accent); font-size:22px; font-weight:700; pointer-events:none; }
+  dialog { width:min(1100px, 94vw); max-height:92vh; padding:0; border:0; border-radius:16px; background:var(--card); color:var(--fg); }
+  dialog::backdrop { background:rgba(0,0,0,.7); }
+  .detail { display:grid; grid-template-columns:minmax(0,1fr) 360px; }
+  #player { background:#000; display:grid; place-items:center; min-height:300px; }
+  #player video { width:100%; max-height:88vh; display:block; }
+  #player iframe { width:100%; aspect-ratio:16/9; border:0; display:block; }
+  .side { padding:16px; display:flex; flex-direction:column; gap:10px; overflow:auto; max-height:88vh; }
+  .side h3 { margin:0; font-size:16px; line-height:1.35; }
+  .side input, .side textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:inherit; font:inherit; }
+  .side textarea { min-height:90px; resize:vertical; }
+  .side label { font-size:12px; color:var(--mute); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  #script { border:1px solid var(--line); border-radius:8px; max-height:280px; overflow:auto; font-size:13px; }
+  #script div { display:flex; gap:10px; padding:4px 10px; cursor:pointer; }
+  #script div:hover { background:var(--bg); }
+  #script time { color:var(--accent); font-variant-numeric:tabular-nums; flex:none; }
+  .muted { color:var(--mute); font-size:12px; padding:8px 10px; }
+  @media (max-width:760px) { .detail { grid-template-columns:1fr; } #player video { max-height:60vh; } .side { max-height:none; } header b { display:none; } }
+</style>
+</head>
+<body>
+<header>
+  <b>ref</b>
+  <form id="f"><input id="q" type="search" placeholder="'감성적인 카페 인테리어' 처럼 찾고 싶은 느낌을 입력" autofocus></form>
+  <label class="btn ghost" id="upBtn" hidden>업로드<input id="file" type="file" accept="video/*" multiple hidden></label>
+</header>
+<nav>
+  <button class="chip on" data-tab="search">레퍼런스 찾기</button>
+  <button class="chip" data-tab="board">내 보드 <span id="cnt"></span></button>
+  <span id="srcs"><span style="color:var(--mute);margin:0 4px 0 10px">출처</span><button class="chip on" data-src="yt">유튜브</button> <button class="chip" data-src="ig">인스타</button></span>
+  <span style="width:8px"></span>
+  <span id="tags"></span>
+</nav>
+<div id="status"></div>
+<main id="grid"></main>
+<div id="empty" hidden></div>
+<div id="drop" hidden>여기에 놓으면 보드에 업로드</div>
+
+<dialog id="dlg">
+  <div class="detail">
+    <div id="player"></div>
+    <div class="side">
+      <h3 id="dTitle"></h3>
+      <div class="muted" id="dSub" style="padding:0"></div>
+      <div class="row">
+        <button id="saveYt">보드에 저장</button>
+        <button class="ghost" id="more">비슷한 영상 더 찾기</button>
+        <a class="btn ghost" id="ytLink" target="_blank" rel="noopener">유튜브에서 보기</a>
+      </div>
+      <div id="edit" class="side" style="padding:0;overflow:visible">
+        <label>제목<input id="dt"></label>
+        <label>태그 (쉼표로 구분)<input id="dg" placeholder="카페, 인테리어, 릴스"></label>
+        <label>메모<textarea id="dm" placeholder="참고 포인트, 카피…"></textarea></label>
+        <div class="row"><button id="saveEdit">저장</button><button class="ghost" id="del">삭제</button></div>
+      </div>
+      <label>스크립트 (시간 누르면 그 장면으로)</label>
+      <div id="script"></div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let src = 'yt', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
+
+const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
+const mmss = (n) => Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+const views = (n) => n == null ? '' : n >= 1e4 ? (n / 1e4).toFixed(1).replace('.0', '') + '만회' : n.toLocaleString() + '회';
+const embed = (id, o = '') => `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0${o}`;
+const igUrl = (code) => `https://www.instagram.com/reel/${code}/`;
+const srcName = () => (src === 'ig' ? '인스타' : '유튜브');
+const fileSrc = (v) => '/videos/' + encodeURIComponent(v.file);
+
+// Uploaded files autoplay (muted) only while on screen, so a long grid stays light.
+const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause()), { rootMargin: '200px' });
+
+function card(v, i) {
+  const media = v.ig
+    ? `<div class="media ig"><div class="cap">${esc(v.title)}</div><iframe src="${igUrl(v.ig)}embed/" loading="lazy" scrolling="no"></iframe></div>`
+    : v.yt
+    ? `<img src="${esc(v.thumb)}" loading="lazy" alt="">${v.duration ? `<span class="dur">${mmss(v.duration)}</span>` : ''}`
+    : `<video src="${fileSrc(v)}#t=0.1" muted loop playsinline preload="metadata"></video>`;
+  const sub = [v.channel && (v.ig ? '@' + v.channel : v.channel), views(v.views), v.likes && '♥ ' + v.likes, ...(v.tags || []).map((t) => '#' + t)].filter(Boolean).map(esc).join(' · ');
+  return `<div class="card" data-i="${i}">${v.ig ? media : `<div class="media">${media}</div>`}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div></div></div>`;
+}
+
+function render() {
+  $('#cnt').textContent = board.length || '';
+  document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+  $('#upBtn').hidden = tab !== 'board';
+  $('#srcs').hidden = tab !== 'search';
+  document.querySelectorAll('[data-src]').forEach((b) => b.classList.toggle('on', b.dataset.src === src));
+  let list = results;
+  if (tab === 'board') {
+    const words = $('#q').value.toLowerCase().split(/\s+/).filter(Boolean);
+    list = board.filter((v) => (!activeTag || v.tags.includes(activeTag)) && words.every((w) => [v.title, v.memo, v.channel, ...v.tags].join(' ').toLowerCase().includes(w)));
+    const allTags = [...new Set(board.flatMap((v) => v.tags))].sort();
+    $('#tags').innerHTML = allTags.map((t) => `<button class="chip ${t === activeTag ? 'on' : ''}" data-t="${esc(t)}">#${esc(t)}</button>`).join('');
+  } else $('#tags').innerHTML = '';
+  window.shown = list;
+  io.disconnect();
+  $('#grid').innerHTML = list.map(card).join('');
+  document.querySelectorAll('#grid video').forEach((el) => io.observe(el));
+  $('#empty').hidden = list.length > 0 || $('#status').textContent !== '';
+  $('#empty').textContent = tab === 'search'
+    ? (lastQuery ? '결과가 없어요. 다른 표현으로 찾아보세요.' : '위에 찾고 싶은 느낌을 적고 Enter. 예) 감성적인 카페 인테리어, 스킨케어 언박싱, 자취방 브이로그')
+    : '보드가 비었어요. 검색 결과에서 [보드에 저장]하거나 영상을 끌어다 놓으세요.';
+}
+
+async function search(q) {
+  q = q.trim();
+  if (!q) return;
+  tab = 'search'; lastQuery = q; results = [];
+  $('#q').value = q;
+  $('#status').textContent = `${srcName()}에서 "${q}" 찾는 중…`;
+  render();
+  try {
+    const r = await fetch(`/api/search?src=${src}&q=` + encodeURIComponent(q));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    if (q !== lastQuery) return; // a newer search started meanwhile
+    results = d;
+    $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개`;
+  } catch (e) {
+    $('#status').textContent = '검색 실패: ' + e.message;
+  }
+  render();
+}
+
+async function loadBoard() { board = await (await fetch('/api/videos')).json(); render(); }
+
+async function loadScript(id) {
+  $('#script').innerHTML = '<div class="muted">스크립트 불러오는 중…</div>';
+  try {
+    const lines = await (await fetch('/api/script?id=' + id)).json();
+    if (current?.yt !== id) return;
+    $('#script').innerHTML = lines.length
+      ? lines.map(([s, t]) => `<div data-s="${s}"><time>${mmss(s)}</time><span>${esc(t)}</span></div>`).join('')
+      : '<div class="muted">자막이 없는 영상이에요.</div>';
+  } catch { $('#script').innerHTML = '<div class="muted">스크립트를 못 불러왔어요.</div>'; }
+}
+
+function open(v) {
+  current = v;
+  const saved = v.id ? v : board.find((b) => (v.yt && b.yt === v.yt) || (v.ig && b.ig === v.ig));
+  $('#player').innerHTML = v.ig
+    ? `<iframe class="igp" src="${igUrl(v.ig)}embed/captioned/"></iframe>`
+    : v.yt
+    ? `<iframe src="${embed(v.yt, '&autoplay=1')}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
+    : `<video src="${fileSrc(v)}" controls playsinline loop autoplay></video>`;
+  $('#dTitle').textContent = v.title;
+  $('#dSub').textContent = [v.channel && (v.ig ? '@' + v.channel : v.channel), views(v.views), v.likes && '♥ ' + v.likes, v.duration && mmss(v.duration)].filter(Boolean).join(' · ');
+  $('#saveYt').hidden = !(v.yt || v.ig) || !!saved;
+  $('#ytLink').hidden = !(v.yt || v.ig);
+  $('#ytLink').textContent = v.ig ? '인스타에서 보기' : '유튜브에서 보기';
+  $('#ytLink').href = v.ig ? igUrl(v.ig) : v.yt ? 'https://www.youtube.com/watch?v=' + v.yt : '#';
+  $('#edit').hidden = !saved;
+  if (saved) { current = saved; $('#dt').value = saved.title; $('#dg').value = saved.tags.join(', '); $('#dm').value = saved.memo; }
+  $('#script').previousElementSibling.hidden = $('#script').hidden = !v.yt;
+  if (v.yt) loadScript(v.yt);
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+
+async function upload(files) {
+  for (const f of files) {
+    if (!f.type.startsWith('video/')) continue;
+    const r = await fetch('/api/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+    if (!r.ok) alert((await r.json()).error);
+  }
+  tab = 'board';
+  loadBoard();
+}
+
+$('#f').onsubmit = (e) => { e.preventDefault(); tab === 'search' ? search($('#q').value) : render(); };
+$('#q').oninput = () => { if (tab === 'board') render(); };
+document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
+  tab = b.dataset.tab; activeTag = null;
+  $('#q').value = tab === 'search' ? lastQuery : '';
+  $('#status').textContent = tab === 'search' && lastQuery ? `${srcName()} "${lastQuery}" 레퍼런스 ${results.length}개` : '';
+  render();
+});
+document.querySelectorAll('[data-src]').forEach((b) => b.onclick = () => {
+  src = b.dataset.src;
+  if (lastQuery) search(lastQuery); else render();
+});
+$('#tags').onclick = (e) => { const t = e.target.dataset.t; if (t) { activeTag = activeTag === t ? null : t; render(); } };
+$('#grid').onclick = (e) => { const c = e.target.closest('.card'); if (c) open(window.shown[c.dataset.i]); };
+
+// Hover preview: swap in a muted autoplaying embed over the thumbnail.
+$('#grid').addEventListener('mouseover', (e) => {
+  const c = e.target.closest('.card'); const v = c && window.shown[c.dataset.i];
+  if (!v?.yt || c.querySelector('iframe')) return;
+  c.querySelector('.media').insertAdjacentHTML('beforeend', `<iframe src="${embed(v.yt, `&autoplay=1&mute=1&controls=0&loop=1&playlist=${v.yt}`)}" allow="autoplay"></iframe>`);
+  c.addEventListener('mouseleave', () => c.querySelector('iframe')?.remove(), { once: true });
+});
+
+$('#script').onclick = (e) => {
+  const s = e.target.closest('[data-s]')?.dataset.s;
+  if (s && current?.yt) $('#player iframe').src = embed(current.yt, `&autoplay=1&start=${s}`);
+};
+$('#saveYt').onclick = async () => {
+  const r = await fetch('/api/save', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(current) });
+  const item = await r.json();
+  await loadBoard();
+  current = item;
+  $('#saveYt').hidden = true; $('#edit').hidden = false;
+  $('#dt').value = item.title; $('#dg').value = item.tags.join(', '); $('#dm').value = item.memo;
+};
+$('#more').onclick = () => {
+  const q = current.title.replace(/#\S+|\[[^\]]*\]|[|｜\-_:!?()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 5).join(' ');
+  $('#dlg').close();
+  search(q || current.title);
+};
+$('#saveEdit').onclick = async () => {
+  await fetch('/api/videos/' + current.id, { method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: $('#dt').value, tags: $('#dg').value.split(','), memo: $('#dm').value }) });
+  await loadBoard();
+  $('#dlg').close();
+};
+$('#del').onclick = async () => {
+  if (!confirm('보드에서 삭제할까요?')) return;
+  await fetch('/api/videos/' + current.id, { method: 'DELETE' });
+  $('#dlg').close();
+  loadBoard();
+};
+$('#file').onchange = (e) => { upload(e.target.files); e.target.value = ''; };
+$('#dlg').onclose = () => { $('#player').innerHTML = ''; };
+$('#dlg').onclick = (e) => { if (e.target === $('#dlg')) $('#dlg').close(); };
+
+let depth = 0;
+addEventListener('dragenter', (e) => { e.preventDefault(); depth++; $('#drop').hidden = false; });
+addEventListener('dragleave', () => { if (--depth <= 0) { depth = 0; $('#drop').hidden = true; } });
+addEventListener('dragover', (e) => e.preventDefault());
+addEventListener('drop', (e) => { e.preventDefault(); depth = 0; $('#drop').hidden = true; upload(e.dataTransfer.files); });
+
+loadBoard();
+</script>
+</body>
+</html>

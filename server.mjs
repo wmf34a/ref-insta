@@ -17,7 +17,11 @@ fs.mkdirSync(VIDEO_DIR, { recursive: true });
 // execFile (no shell) keeps the search query out of shell parsing.
 const runJson = (bin, args) =>
   new Promise((ok, fail) =>
-    execFile(bin, args, { maxBuffer: 64 << 20, timeout: 60_000 }, (e, out) => (e ? fail(e) : ok(JSON.parse(out)))),
+    execFile(bin, args, { maxBuffer: 64 << 20, timeout: 60_000 }, (e, out, err) => {
+      if (!e) return ok(JSON.parse(out));
+      const msg = (err || e.message).trim().split('\n').pop();
+      fail(new Error(/429/.test(msg) ? '검색 한도를 넘었어요. 1분쯤 뒤에 다시 해보세요.' : msg));
+    }),
   );
 const ytdlp = (args) => runJson('yt-dlp', args);
 // ponytail: unbounded in-memory cache, fine for one person; add LRU/TTL if it runs for weeks.
@@ -27,34 +31,44 @@ const cached = async (key, fn) => {
   return cache.get(key);
 };
 
-// Neither YouTube nor Instagram offers a public short-form search, so find Shorts/Reels through a
-// web search (Firecrawl, site: filter) and play them with each platform's own embed.
-const webSearch = async (site, q) =>
-  (await runJson('firecrawl', ['search', `site:${site} ${q}`, '--limit', '40', '--json'])).data?.web || [];
-const dedupe = (key) => {
-  // The same post often shows up under several URLs; drop repeats by id and by caption.
-  const seen = new Set();
-  return (v) => v && !seen.has(v[key]) && !seen.has(v.title) && seen.add(v[key]).add(v.title);
+// None of these platforms offers a public content search, so find posts through a web search
+// (Firecrawl, site: filter) and play them with each platform's own embed. `re` pulls out the id the embed needs.
+const SOURCES = {
+  yt: { site: 'youtube.com/shorts', re: /youtube\.com\/shorts\/([\w-]{11})/ },
+  ig: { site: 'instagram.com', re: /instagram\.com\/(?:[\w.]+\/)?(?:reels?|p)\/([\w-]+)/ },
+  tt: { site: 'tiktok.com', re: /tiktok\.com\/@[\w.-]+\/video\/(\d+)/ },
+  pin: { site: 'pinterest.com/pin', re: /pinterest\.[\w.]+\/pin\/(?:[\w-]*--)?(\d+)/ },
+  th: { site: 'threads.com', re: /threads\.(?:com|net)\/(@[\w.]+\/post\/[\w-]+)/ },
 };
+const REF_OK = /^@?[\w.\/-]{1,80}$/;
 
-async function searchShorts(q) {
-  return (await webSearch('youtube.com/shorts', q))
+const PERIODS = new Set(['w', 'm', 'y']); // past week / month / year (Google-style qdr filter)
+
+async function searchSource(src, q, period) {
+  const { site, re } = SOURCES[src];
+  const args = ['search', `site:${site} ${q}`, '--limit', '40', '--json', ...(period ? ['--tbs', `qdr:${period}`] : [])];
+  const hits = (await runJson('firecrawl', args)).data?.web || [];
+  const seen = new Set(); // the same post often shows up under several URLs; drop repeats by id and by caption
+  return hits
     .map((r) => {
-      const id = /youtube\.com\/shorts\/([\w-]{11})/.exec(r.url)?.[1];
-      return id && { yt: id, title: (r.title || '').replace(/ - YouTube$/, ''), thumb: `https://i.ytimg.com/vi/${id}/oar2.jpg` };
+      const ref = re.exec(r.url)?.[1];
+      // Meta descriptions look like: '3 likes, 0 comments - c_pop_studio on June 11, 2025: "caption…'
+      const m = /^([\d,.KkMm]+) likes?.*? - ([\w.]+) on [^:]+: "?(.*)/.exec(r.description || '');
+      const title = (m?.[3] || r.title || '').replace(/\s*[-|]\s*(YouTube|Instagram|TikTok|Pinterest|Threads)$/i, '').trim();
+      return ref && { src, ref, url: r.url, title, channel: m?.[2] || '', likes: m?.[1] || '' };
     })
-    .filter(dedupe('yt'));
+    .filter((v) => v && !seen.has(v.ref) && !seen.has(v.title) && seen.add(v.ref).add(v.title));
 }
 
-async function searchReels(q) {
-  return (await webSearch('instagram.com/reel', q))
-    .map((r) => {
-      const code = /instagram\.com\/(?:[\w.]+\/)?(?:reel|reels|p)\/([\w-]+)/.exec(r.url)?.[1];
-      // Descriptions look like: '3 likes, 0 comments - c_pop_studio on June 11, 2025: "caption…'
-      const m = /^([\d,.KkMm]+) likes?.*? - ([\w.]+) on [^:]+: "?(.*)/.exec(r.description || '');
-      return code && { ig: code, title: (m?.[3] || r.title || '').replace(/ - Instagram$/, ''), channel: m?.[2] || '', likes: m?.[1] || '' };
-    })
-    .filter(dedupe('ig'));
+// "all": every source in parallel, interleaved so one platform doesn't bury the rest. A failing source is skipped.
+async function searchAll(q, period) {
+  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => cached(`${s}:${period}:${q}`, () => searchSource(s, q, period))));
+  if (settled.every((r) => r.status === 'rejected')) throw settled[0].reason; // e.g. Firecrawl 429 — show it instead of "0 results"
+  const lists = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
+  const failed = Object.keys(SOURCES).filter((_, i) => settled[i].status === 'rejected');
+  const out = [];
+  for (let i = 0; i < 40; i++) for (const l of lists) if (l[i]) out.push(l[i]);
+  return { out, failed };
 }
 
 async function fetchScript(id) {
@@ -122,8 +136,15 @@ http
       if (req.method === 'GET' && p === '/api/search') {
         const q = (url.searchParams.get('q') || '').trim();
         if (!q) return json(res, 400, { error: '검색어가 비었어요' });
-        const src = url.searchParams.get('src') === 'ig' ? 'ig' : 'yt';
-        return json(res, 200, await cached(src + ':' + q, () => (src === 'ig' ? searchReels(q) : searchShorts(q))));
+        const src = url.searchParams.get('src');
+        const period = PERIODS.has(url.searchParams.get('period')) ? url.searchParams.get('period') : '';
+        if (src === 'all') {
+          const { out, failed } = await searchAll(q, period);
+          res.setHeader('x-failed', failed.join(','));
+          return json(res, 200, out);
+        }
+        if (!SOURCES[src]) return json(res, 400, { error: 'unknown source' });
+        return json(res, 200, await cached(`${src}:${period}:${q}`, () => searchSource(src, q, period)));
       }
       if (req.method === 'GET' && p === '/api/script') {
         const id = url.searchParams.get('id') || '';
@@ -131,13 +152,12 @@ http
         return json(res, 200, await cached('t:' + id, () => fetchScript(id)));
       }
       if (req.method === 'POST' && p === '/api/save') {
-        const { yt, ig, title, channel, thumb } = JSON.parse((await readBody(req)).toString() || '{}');
-        const ok = yt ? /^[\w-]{11}$/.test(yt) : /^[\w-]{5,40}$/.test(ig || '');
-        if (!ok) return json(res, 400, { error: 'bad id' });
+        const { src, ref, url: link, title, channel } = JSON.parse((await readBody(req)).toString() || '{}');
+        if (!SOURCES[src] || !REF_OK.test(ref || '') || !SOURCES[src].re.test(link || '')) return json(res, 400, { error: 'bad item' });
         const list = load();
-        const hit = list.find((v) => (yt ? v.yt === yt : v.ig === ig));
+        const hit = list.find((v) => v.src === src && v.ref === ref);
         if (hit) return json(res, 200, hit);
-        const item = { id: crypto.randomUUID().slice(0, 8), ...(yt ? { yt } : { ig }), title: String(title || ''), channel: String(channel || ''), thumb: String(thumb || ''), tags: [], memo: '', created: Date.now() };
+        const item = { id: crypto.randomUUID().slice(0, 8), src, ref, url: String(link), title: String(title || ''), channel: String(channel || ''), tags: [], memo: '', created: Date.now() };
         save([item, ...list]);
         return json(res, 201, item);
       }

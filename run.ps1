@@ -30,6 +30,7 @@ try {
     Invoke-WebRequest 'https://github.com/ggml-org/whisper.cpp/releases/download/v1.9.2/whisper-bin-x64.zip' -OutFile $zip
     Expand-Archive $zip (Join-Path $tools 'whisper') -Force
     Remove-Item $zip
+    Get-ChildItem (Join-Path $tools 'whisper') -Recurse | Unblock-File # drop "downloaded from internet" mark so the exe/dlls load
     $whisper = Get-ChildItem $tools -Recurse -Filter whisper-cli.exe | Select-Object -First 1
   }
   $model = Join-Path $tools 'ggml-small-q5_1.bin'

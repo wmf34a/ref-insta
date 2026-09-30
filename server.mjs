@@ -57,11 +57,16 @@ const linkOk = (src, link) => {
 
 const PERIODS = new Set(['w', 'm', 'y']); // past week / month / year (Google-style qdr filter)
 
-// Firecrawl web search. With FIRECRAWL_API_KEY set, call the REST API directly (works on Windows too);
-// otherwise use the logged-in `firecrawl` CLI (macOS/Linux — Windows can't spawn its .cmd shim without a shell).
+// Firecrawl key: FIRECRAWL_API_KEY, or a .firecrawl-key file next to this script (what run.cmd / run.sh write).
+// Read on every search so adding the key doesn't need a restart.
+const KEY_FILE = path.join(ROOT, '.firecrawl-key');
+const firecrawlKey = () => process.env.FIRECRAWL_API_KEY || (fs.existsSync(KEY_FILE) ? fs.readFileSync(KEY_FILE, 'utf8').trim() : '');
+
+// Firecrawl web search: REST API when a key is known (any OS); otherwise the logged-in `firecrawl` CLI
+// (macOS/Linux only — Windows can't spawn its .cmd shim without a shell, and a shell would parse the query).
 async function webSearch(query, period) {
   const tbs = period ? `qdr:${period}` : undefined;
-  const key = process.env.FIRECRAWL_API_KEY;
+  const key = firecrawlKey();
   if (key) {
     const r = await fetch('https://api.firecrawl.dev/v2/search', {
       method: 'POST',
@@ -73,7 +78,7 @@ async function webSearch(query, period) {
     if (!r.ok) throw new Error(j.error || `Firecrawl ${r.status}`);
     return j.data?.web || [];
   }
-  if (WIN) throw new Error('Windows에서는 FIRECRAWL_API_KEY 환경 변수를 설정해 주세요.');
+  if (WIN) throw new Error('Firecrawl API 키가 없어요. run 으로 실행하거나 .firecrawl-key 파일에 키를 넣어 주세요.');
   return (await runJson('firecrawl', ['search', query, '--limit', '40', '--json', ...(tbs ? ['--tbs', tbs] : [])])).data?.web || [];
 }
 
@@ -120,20 +125,33 @@ async function fetchCaptions(id) {
 
 // ---- Analysis: download → scene cuts + frame per scene → on-screen text (OCR) → speech (captions or Whisper) ----
 const CACHE_DIR = path.join(ROOT, 'cache');
-const run = (bin, args, timeout = 300_000) =>
+// Resolves stdout+stderr (ffmpeg logs to stderr); `stdoutOnly` for tools that chatter on stderr.
+const run = (bin, args, timeout = 300_000, stdoutOnly = false) =>
   new Promise((ok, fail) =>
     execFile(bin, args, { maxBuffer: 64 << 20, timeout }, (e, out, err) =>
-      e ? fail(new Error((err || e.message).trim().split('\n').pop())) : ok(out + err),
+      e ? fail(new Error((err || e.message).trim().split('\n').pop())) : ok(stdoutOnly ? out : out + err),
     ),
   );
 const has = (bin) => run(WIN ? 'where' : 'which', [bin]).then(() => true, () => false);
 const OCR_BIN = path.join(CACHE_DIR, 'ocr');
 
-// macOS Vision OCR (no install needed); compiled once from ocr.swift. Other OSes skip OCR.
+// On-screen text, one string per image. Uses what the OS already has:
+// macOS Vision (ocr.swift, compiled once), Windows' built-in OCR (ocr.ps1), else Tesseract if installed.
 async function ocr(files) {
-  if (process.platform !== 'darwin') return [];
-  if (!fs.existsSync(OCR_BIN)) await run('swiftc', ['-O', path.join(ROOT, 'ocr.swift'), '-o', OCR_BIN]);
-  return JSON.parse(await run(OCR_BIN, files).then((o) => o.slice(o.indexOf('['), o.lastIndexOf(']') + 1)));
+  if (process.platform === 'darwin') {
+    if (!fs.existsSync(OCR_BIN)) await run('swiftc', ['-O', path.join(ROOT, 'ocr.swift'), '-o', OCR_BIN]);
+    return JSON.parse(await run(OCR_BIN, files).then((o) => o.slice(o.indexOf('['), o.lastIndexOf(']') + 1)));
+  }
+  if (WIN) {
+    // Result goes through a UTF-8 file: Windows PowerShell's stdout uses the console code page and mangles Korean.
+    const out = path.join(path.dirname(files[0]), 'ocr.json');
+    await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(ROOT, 'ocr.ps1'), out, ...files]);
+    return JSON.parse(fs.readFileSync(out, 'utf8').replace(/^\uFEFF/, ''));
+  }
+  if (!(await has('tesseract'))) return [];
+  const texts = [];
+  for (const f of files) texts.push((await run('tesseract', [f, 'stdout', '-l', 'kor+eng'], 60_000, true).catch(() => '')).replace(/\s+/g, ' ').trim());
+  return texts;
 }
 
 // Speech-to-text for videos without captions via whisper.cpp (mac: `brew install whisper-cpp`;

@@ -1,0 +1,8 @@
+{
+  "name": "ref-insta",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  // run_worker_first: the password check covers the page itself, not only /api.
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "d1_databases": [{ "binding": "DB", "database_name": "ref-insta", "database_id": "5180ee40-b831-4110-bf33-b89354391ee6" }]
+}

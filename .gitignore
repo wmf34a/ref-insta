@@ -4,3 +4,6 @@ data.json
 cache/
 tools/
 .firecrawl-key
+.cloud.json
+.dev.vars
+.wrangler/

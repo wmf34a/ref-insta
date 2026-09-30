@@ -1,0 +1,3 @@
+-- D1 schema for the Cloudflare Worker (board + small settings).
+CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, data TEXT NOT NULL, created INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);

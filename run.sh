@@ -18,6 +18,8 @@ need() { # need <command> <brew formula>
 need node node
 need yt-dlp yt-dlp
 need ffmpeg ffmpeg
+# Cloud mode (.cloud.json present): this PC does the analysis for the Cloudflare site through a tunnel.
+[ -f .cloud.json ] && need cloudflared cloudflared
 
 # Optional: speech-to-text for videos without captions. Failure here only disables the script column.
 command -v whisper-cli >/dev/null || { command -v brew >/dev/null && brew install whisper-cpp || echo "whisper-cpp not installed; scripts only from YouTube captions."; }

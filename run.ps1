@@ -20,6 +20,8 @@ function Need($cmd, $id) {
 Need node OpenJS.NodeJS.LTS
 Need yt-dlp yt-dlp.yt-dlp
 Need ffmpeg Gyan.FFmpeg
+# Cloud mode (.cloud.json present): this PC does the analysis for the Cloudflare site through a tunnel.
+if (Test-Path (Join-Path $PSScriptRoot '.cloud.json')) { Need cloudflared Cloudflare.cloudflared }
 
 # Optional: speech-to-text for videos without captions. Failure here only disables the script column.
 try {

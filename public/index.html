@@ -80,6 +80,7 @@
   .grp input[type=date] { padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:inherit; font:inherit; }
   #statusRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:0 16px; margin-top:10px; }
   #statusRow #status { padding:0; margin:0; }
+  #offline { margin:10px 16px 0; padding:8px 12px; border-radius:10px; font-size:13px; background:color-mix(in srgb, #f5a623 18%, var(--card)); border:1px solid color-mix(in srgb, #f5a623 45%, transparent); }
   #batchBtn { padding:5px 12px; font-size:12px; white-space:nowrap; }
   .date { color:var(--mute); font-size:12px; }
   .hits { margin-top:6px; display:flex; flex-direction:column; gap:4px; }
@@ -137,6 +138,7 @@
   <span style="width:8px"></span>
   <span id="tags"></span>
 </nav>
+<div id="offline" hidden>분석 PC가 꺼져 있어요. 검색·보드는 그대로 되고, 스크립트·장면 분석과 장면·대사 검색은 PC에서 ref 를 켜면 돼요.</div>
 <div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>검색 결과 대사까지 분석</button></div>
 <main id="grid"></main>
 <div id="empty" hidden></div>
@@ -287,8 +289,10 @@ async function search(q) {
 async function searchScenes(q) {
   $('#status').textContent = `분석해 둔 영상에서 "${q}" 찾는 중…`;
   render();
-  const d = await (await fetch('/api/scenes?q=' + encodeURIComponent(q))).json();
+  const r = await fetch('/api/scenes?q=' + encodeURIComponent(q));
+  const d = await r.json();
   if (q !== lastQuery || mode !== 'scene') return;
+  if (!r.ok) { $('#status').textContent = '검색 실패: ' + d.error; return render(); }
   results = d;
   $('#status').textContent = `대사·화면 글자에 "${q}"가 나오는 영상 ${d.length}개`;
   render();
@@ -527,6 +531,7 @@ addEventListener('drop', (e) => { e.preventDefault(); depth = 0; $('#drop').hidd
 
 render();
 loadBoard();
+fetch('/api/status').then((r) => r.json()).then((s) => ($('#offline').hidden = s.analyzer)).catch(() => {});
 </script>
 </body>
 </html>

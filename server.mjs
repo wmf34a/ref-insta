@@ -5,8 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, handleSearch, newBoardItem } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -28,83 +29,6 @@ const runJson = (bin, args) =>
     }),
   );
 const ytdlp = (args) => runJson('yt-dlp', args);
-// ponytail: unbounded in-memory cache, fine for one person; add LRU/TTL if it runs for weeks.
-const cache = new Map();
-const cached = async (key, fn) => {
-  if (!cache.has(key)) cache.set(key, fn().catch((e) => (cache.delete(key), Promise.reject(e))));
-  return cache.get(key);
-};
-
-// None of these platforms offers a public content search, so find posts through a web search
-// (Firecrawl, site: filter) and play them with each platform's own embed. `re` pulls out the id the embed needs.
-const SOURCES = {
-  yt: { site: 'youtube.com/shorts', host: /(^|\.)youtube\.com$/, re: /youtube\.com\/shorts\/([\w-]{11})/ },
-  ig: { site: 'instagram.com', host: /(^|\.)instagram\.com$/, re: /instagram\.com\/(?:[\w.]+\/)?(?:reels?|p)\/([\w-]+)/ },
-  tt: { site: 'tiktok.com', host: /(^|\.)tiktok\.com$/, re: /tiktok\.com\/@[\w.-]+\/video\/(\d+)/ },
-  pin: { site: 'pinterest.com/pin', host: /(^|\.)pinterest\.[a-z.]+$/, re: /pinterest\.[\w.]+\/pin\/(?:[\w-]*--)?(\d+)/ },
-  th: { site: 'threads.com', host: /(^|\.)threads\.(com|net)$/, re: /threads\.(?:com|net)\/(@[\w.]+\/post\/[\w-]+)/ },
-};
-const REF_OK = /^@?[\w.\/-]{1,80}$/;
-// A link we hand to yt-dlp must really point at that platform (not just contain its path somewhere).
-const linkOk = (src, link) => {
-  try {
-    const u = new URL(link);
-    return u.protocol === 'https:' && SOURCES[src].host.test(u.hostname) && SOURCES[src].re.test(link);
-  } catch {
-    return false;
-  }
-};
-
-// Posting-date filter. Firecrawl honours only Google's qdr:w/m/y (a custom cdr: range is ignored), so we
-// search with the narrowest qdr that covers the range, then keep posts whose real date falls inside it.
-const DAY = 86_400_000;
-const PRESETS = { w: 7, m: 31, '90d': 90, '6m': 183, y: 365 };
-function dateRange(params) {
-  const now = Date.now();
-  let min = null;
-  let max = null;
-  const p = params.get('period');
-  if (PRESETS[p]) min = now - PRESETS[p] * DAY;
-  else if (p === 'custom') {
-    const from = Date.parse(params.get('from'));
-    const to = Date.parse(params.get('to'));
-    if (!Number.isNaN(from)) min = from;
-    if (!Number.isNaN(to)) max = to + DAY - 1; // "to" includes that whole day
-  }
-  if (min == null && max == null) return { qdr: '', min, max };
-  const age = min == null ? Infinity : (now - min) / DAY;
-  const qdr = age <= 7 ? 'w' : age <= 31 ? 'm' : age <= 366 ? 'y' : '';
-  return { qdr, min: min ?? -Infinity, max: max ?? Infinity };
-}
-
-// When was a post published (ms), or null. TikTok ids start with a unix timestamp; Instagram/Threads shortcodes
-// are base64 media ids whose top bits are ms since 2011-08-24; YouTube needs one page fetch (cached).
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-const igTime = (code) => Number(([...code.slice(0, 11)].reduce((n, c) => n * 64n + BigInt(B64.indexOf(c)), 0n) >> 23n) + 1314220021721n);
-const ytTime = (id) =>
-  cached('date:' + id, async () => {
-    const r = await fetch(`https://www.youtube.com/shorts/${id}`, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ko' } });
-    const m = /"publishDate":"([^"]+)"/.exec(await r.text());
-    return m ? Date.parse(m[1]) : null;
-  });
-async function postTime(v) {
-  try {
-    if (v.src === 'tt') return Number(BigInt(v.ref) >> 32n) * 1000;
-    if (v.src === 'ig') return igTime(v.ref);
-    if (v.src === 'th') return igTime(v.ref.split('/post/')[1]);
-  } catch {}
-  return null; // YouTube: see withYtDates. Pinterest ids carry no date.
-}
-// YouTube dates cost a page fetch each (~1s), so only look them up when a date filter needs them.
-const withYtDates = (list) => pool(list.filter((v) => v.src === 'yt' && v.date == null), 10, async (v) => (v.date = await ytTime(v.ref).catch(() => null)));
-// Run fn over items, at most n at a time (YouTube date lookups: 40 at once gets throttled).
-async function pool(items, n, fn) {
-  const out = [];
-  let i = 0;
-  await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } }));
-  return out;
-}
-
 // Firecrawl key: FIRECRAWL_API_KEY, or a .firecrawl-key file next to this script (what run.cmd / run.sh write).
 // Read on every search so adding the key doesn't need a restart.
 const KEY_FILE = path.join(ROOT, '.firecrawl-key');
@@ -115,50 +39,9 @@ const firecrawlKey = () => process.env.FIRECRAWL_API_KEY || (fs.existsSync(KEY_F
 async function webSearch(query, qdr) {
   const tbs = qdr ? `qdr:${qdr}` : undefined;
   const key = firecrawlKey();
-  if (key) {
-    const r = await fetch('https://api.firecrawl.dev/v2/search', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ query, limit: 40, ...(tbs && { tbs }) }),
-    });
-    if (r.status === 429) throw new Error('검색 한도를 넘었어요. 1분쯤 뒤에 다시 해보세요.');
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || `Firecrawl ${r.status}`);
-    return j.data?.web || [];
-  }
+  if (key) return firecrawlSearch(key, query, qdr);
   if (WIN) throw new Error('Firecrawl API 키가 없어요. run 으로 실행하거나 .firecrawl-key 파일에 키를 넣어 주세요.');
   return (await runJson('firecrawl', ['search', query, '--limit', '40', '--json', ...(tbs ? ['--tbs', tbs] : [])])).data?.web || [];
-}
-
-async function searchSource(src, q, qdr) {
-  const { site, re } = SOURCES[src];
-  const hits = await webSearch(`site:${site} ${q}`, qdr);
-  const seen = new Set(); // the same post often shows up under several URLs; drop repeats by id and by caption
-  const list = hits
-    .map((r) => {
-      const ref = re.exec(r.url)?.[1];
-      // Meta descriptions look like: '3 likes, 0 comments - c_pop_studio on June 11, 2025: "caption…'
-      const m = /^([\d,.KkMm]+) likes?.*? - ([\w.]+) on [^:]+: "?(.*)/.exec(r.description || '');
-      const title = (m?.[3] || r.title || '').replace(/\s*[-|]\s*(YouTube|Instagram|TikTok|Pinterest|Threads)$/i, '').trim();
-      return ref && { src, ref, url: r.url, title, channel: m?.[2] || '', likes: m?.[1] || '' };
-    })
-    .filter((v) => v && !seen.has(v.ref) && !seen.has(v.title) && seen.add(v.ref).add(v.title));
-  await pool(list, 8, async (v) => (v.date = await postTime(v)));
-  return list;
-}
-
-const inRange = (range) => (v) => range.min == null || (v.date != null && v.date >= range.min && v.date <= range.max);
-
-// "all": every source in parallel, interleaved so one platform doesn't bury the rest. A failing source is skipped.
-async function searchAll(q, range) {
-  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => cached(`${s}:${range.qdr}:${q}`, () => searchSource(s, q, range.qdr))));
-  if (settled.every((r) => r.status === 'rejected')) throw settled[0].reason; // e.g. Firecrawl 429 — show it instead of "0 results"
-  if (range.min != null) await withYtDates(settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
-  const lists = settled.map((r) => (r.status === 'fulfilled' ? r.value.filter(inRange(range)) : []));
-  const failed = Object.keys(SOURCES).filter((_, i) => settled[i].status === 'rejected');
-  const out = [];
-  for (let i = 0; i < 40; i++) for (const l of lists) if (l[i]) out.push(l[i]);
-  return { out, failed };
 }
 
 // YouTube captions as [startSec, endSec, text].
@@ -349,32 +232,54 @@ function serveFile(req, res, root, rel) {
   fs.createReadStream(file, { start, end }).pipe(res);
 }
 
+// ---- Cloud mode: the Cloudflare Worker serves the site; this PC does the analysis behind a Cloudflare Tunnel. ----
+// .cloud.json (git-ignored) = { "url": "https://<worker>.workers.dev", "token": "<shared secret>" }.
+const CLOUD_FILE = path.join(ROOT, '.cloud.json');
+const cloud = fs.existsSync(CLOUD_FILE) ? JSON.parse(fs.readFileSync(CLOUD_FILE, 'utf8')) : null;
+
+// Requests that came through the tunnel carry cf-connecting-ip; only the Worker (holding the token) may use them.
+const fromTunnel = (req) => 'cf-connecting-ip' in req.headers;
+const tokenOk = (req) => cloud && req.headers['x-ref-token'] === cloud.token;
+
+function startTunnel() {
+  const bin = process.env.CLOUDFLARED || 'cloudflared';
+  const child = spawn(bin, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${PORT}`], { stdio: ['ignore', 'ignore', 'pipe'] });
+  child.on('error', () => console.log('cloudflared 가 없어요. 설치하면 이 PC가 클라우드 사이트의 분석을 맡아요.'));
+  let tunnel = null;
+  const register = () =>
+    fetch(cloud.url + '/api/analyzer', { method: 'POST', headers: { 'x-ref-token': cloud.token, 'content-type': 'application/json' }, body: JSON.stringify({ url: tunnel }) })
+      .then((r) => console.log(r.ok ? `분석 PC 등록됨 → ${cloud.url}` : `분석 PC 등록 실패: ${r.status}`))
+      .catch((e) => console.log('분석 PC 등록 실패: ' + e.message));
+  child.stderr.on('data', (d) => {
+    const m = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/.exec(String(d));
+    if (m && !tunnel) {
+      tunnel = m[0];
+      register();
+      setInterval(register, 5 * 60_000); // heartbeat: the Worker treats us as offline after 15 min of silence
+    }
+  });
+  process.on('exit', () => child.kill());
+  process.on('SIGINT', () => process.exit());
+}
+
 http
   .createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const p = url.pathname;
+    if (fromTunnel(req) && !tokenOk(req)) return json(res, 403, { error: 'forbidden' });
     try {
       if (req.method === 'GET' && p === '/') {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        return fs.createReadStream(path.join(ROOT, 'index.html')).pipe(res);
+        return fs.createReadStream(path.join(ROOT, 'public', 'index.html')).pipe(res);
       }
       if (req.method === 'GET' && p.startsWith('/videos/')) return serveFile(req, res, VIDEO_DIR, decodeURIComponent(p.slice(8)));
       if (req.method === 'GET' && p.startsWith('/cache/')) return serveFile(req, res, CACHE_DIR, decodeURIComponent(p.slice(7)));
       if (req.method === 'GET' && p === '/api/videos') return json(res, 200, load());
+      if (req.method === 'GET' && p === '/api/status') return json(res, 200, { analyzer: true });
       if (req.method === 'GET' && p === '/api/search') {
-        const q = (url.searchParams.get('q') || '').trim();
-        if (!q) return json(res, 400, { error: '검색어가 비었어요' });
-        const src = url.searchParams.get('src');
-        const range = dateRange(url.searchParams);
-        if (src === 'all') {
-          const { out, failed } = await searchAll(q, range);
-          res.setHeader('x-failed', failed.join(','));
-          return json(res, 200, out);
-        }
-        if (!SOURCES[src]) return json(res, 400, { error: 'unknown source' });
-        const list = await cached(`${src}:${range.qdr}:${q}`, () => searchSource(src, q, range.qdr));
-        if (range.min != null) await withYtDates(list);
-        return json(res, 200, list.filter(inRange(range)));
+        const r = await handleSearch(url.searchParams, webSearch);
+        if (r.failed) res.setHeader('x-failed', r.failed.join(','));
+        return json(res, r.status, r.body);
       }
       if (req.method === 'GET' && p === '/api/scenes') return json(res, 200, searchScenes((url.searchParams.get('q') || '').trim()));
       if (req.method === 'GET' && p === '/api/analyze') {
@@ -394,12 +299,11 @@ http
         return json(res, 200, await cached('a:' + key, () => analyze({ key, link, ytId: src === 'yt' ? ref : null, meta })));
       }
       if (req.method === 'POST' && p === '/api/save') {
-        const { src, ref, url: link, title, channel } = JSON.parse((await readBody(req)).toString() || '{}');
-        if (!SOURCES[src] || !REF_OK.test(ref || '') || !linkOk(src, link)) return json(res, 400, { error: 'bad item' });
+        const item = newBoardItem(JSON.parse((await readBody(req)).toString() || '{}'), crypto.randomUUID().slice(0, 8));
+        if (!item) return json(res, 400, { error: 'bad item' });
         const list = load();
-        const hit = list.find((v) => v.src === src && v.ref === ref);
+        const hit = list.find((v) => v.src === item.src && v.ref === item.ref);
         if (hit) return json(res, 200, hit);
-        const item = { id: crypto.randomUUID().slice(0, 8), src, ref, url: String(link), title: String(title || ''), channel: String(channel || ''), tags: [], memo: '', created: Date.now() };
         save([item, ...list]);
         return json(res, 201, item);
       }
@@ -440,4 +344,7 @@ http
       json(res, 500, { error: String(e.message || e) });
     }
   })
-  .listen(PORT, () => console.log(`ref → http://localhost:${PORT}`));
+  .listen(PORT, () => {
+    console.log(`ref → http://localhost:${PORT}`);
+    if (cloud) startTunnel();
+  });

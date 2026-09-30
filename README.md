@@ -37,12 +37,47 @@ First run installs Node / yt-dlp / FFmpeg with winget if missing, downloads whis
 
 On Windows the on-screen text (OCR) column stays empty — it uses macOS Vision. Everything else works the same.
 
+## Cloud (Cloudflare) — open it from anywhere
+
+The site runs on Cloudflare Workers (`worker.js` + D1 for the board), always on, behind one password.
+Video analysis still needs ffmpeg / yt-dlp / Whisper, so one PC running `run` does that part: when
+`.cloud.json` exists, `server.mjs` opens a Cloudflare quick tunnel and registers it with the Worker
+every 5 minutes. With the PC off, search and the board keep working; analysis shows "분석 PC가 꺼져 있어요".
+
+```
+phone / any browser ──▶ ref-insta.<account>.workers.dev (Worker: page, search, board in D1)
+                                   │  /api/analyze, /api/scenes, /api/upload, /cache/*, /videos/*
+                                   ▼
+                        *.trycloudflare.com ──▶ PC running server.mjs (token-checked)
+```
+
+One-time setup (already done for `ref-insta`):
+
+```sh
+npx wrangler d1 create ref-insta            # put the id in wrangler.jsonc
+npx wrangler d1 execute ref-insta --remote --file=schema.sql
+npx wrangler secret put APP_PASSWORD        # site password (any user name in the login prompt)
+npx wrangler secret put FIRECRAWL_API_KEY
+npx wrangler secret put ANALYZER_TOKEN      # same value as "token" in .cloud.json
+npx wrangler deploy
+```
+
+`.cloud.json` (git-ignored) on the analysis PC:
+
+```json
+{ "url": "https://ref-insta.<account>.workers.dev", "token": "<ANALYZER_TOKEN>" }
+```
+
+Redeploy after changing `worker.js`, `search.mjs` or `public/`: `npx wrangler deploy`.
+Only one PC is the analyzer at a time — the last one to start wins.
+
 ## Environment variables
 
 - `FIRECRAWL_API_KEY` — use the Firecrawl REST API instead of the CLI (required on Windows)
 - `WHISPER_CLI` — path to `whisper-cli` if it's not on PATH
 - `WHISPER_MODEL` — ggml model path (default `~/.cache/whisper/ggml-small-q5_1.bin`)
 - `PORT` — default 5173
+- `CLOUDFLARED` — path to `cloudflared` if it's not on PATH
 
 ## Local data (git-ignored)
 

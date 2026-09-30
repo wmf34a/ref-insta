@@ -71,26 +71,73 @@
   .muted { color:var(--mute); font-size:13px; padding:8px 0; }
   .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:r 1s linear infinite; vertical-align:-2px; margin-right:6px; }
   @keyframes r { to { transform:rotate(360deg); } }
+  .seg { display:flex; background:var(--line); border-radius:999px; padding:3px; flex:none; }
+  .seg button { background:none; color:var(--mute); padding:6px 12px; font-size:13px; }
+  .seg button.on { background:var(--card); color:var(--fg); box-shadow:0 1px 2px rgba(0,0,0,.12); }
+  .filters { display:contents; }
+  .grp { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .grp > .lbl { color:var(--mute); margin:0 2px 0 10px; white-space:nowrap; }
+  .grp input[type=date] { padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:inherit; font:inherit; }
+  #statusRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:0 16px; margin-top:10px; }
+  #statusRow #status { padding:0; margin:0; }
+  #batchBtn { padding:5px 12px; font-size:12px; white-space:nowrap; }
+  .date { color:var(--mute); font-size:12px; }
+  .hits { margin-top:6px; display:flex; flex-direction:column; gap:4px; }
+  .hit { display:flex; gap:6px; font-size:12px; line-height:1.4; padding:4px 6px; border-radius:6px; background:var(--bg); }
+  .hit time { color:var(--accent); font-variant-numeric:tabular-nums; flex:none; }
+  .hit .k { color:var(--mute); flex:none; }
+  .hit mark { background:color-mix(in srgb, var(--accent) 25%, transparent); color:inherit; border-radius:2px; }
   #cat { padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; }
-  @media (max-width:860px) { dialog { height:auto; max-height:94vh; overflow:auto; } .detail { grid-template-columns:1fr; height:auto; } .left { border:0; overflow:visible; } #player iframe { height:60vh; } .pane { overflow:visible; } .scene { grid-template-columns:64px 80px minmax(0,1fr); } .scene img { width:64px; } header b { display:none; } }
+  @media (max-width:860px) {
+    dialog { width:100vw; max-width:100vw; height:100dvh; max-height:100dvh; border-radius:0; overflow:auto; }
+    .detail { grid-template-columns:1fr; height:auto; }
+    .left { border:0; overflow:visible; }
+    #player { min-height:0; }
+    #player iframe, #player video { height:auto; max-height:58dvh; aspect-ratio:9/16; width:auto; max-width:100%; margin:0 auto; }
+    .right { min-height:auto; }
+    .tabs { position:sticky; top:0; background:var(--card); z-index:2; padding:10px 16px 0; }
+    .pane { overflow:visible; padding:12px 16px; }
+    .scene { grid-template-columns:64px minmax(0,1fr); gap:10px; }
+    .scene img { width:64px; grid-row:span 2; }
+    .scene time { font-size:12px; }
+    #simGrid { columns:2; }
+  }
+  @media (max-width:600px) {
+    header { flex-wrap:wrap; padding:10px 12px; gap:8px; padding-top:calc(10px + env(safe-area-inset-top, 0px)); }
+    header b { display:none; }
+    form { order:3; flex-basis:100%; }
+    .seg { order:1; }
+    #upBtn { order:2; margin-left:auto; }
+    nav { padding:10px 12px 0; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+    nav::-webkit-scrollbar { display:none; }
+    .grp { flex-wrap:nowrap; }
+    .chip, .grp select { flex:none; }
+    #statusRow { padding:0 12px; }
+    #grid { columns:2; column-gap:8px; padding:10px 8px; }
+    .card { margin-bottom:8px; border-radius:10px; }
+    .card .meta { padding:6px 8px 8px; }
+    .card .t { font-size:13px; }
+  }
 </style>
 </head>
 <body>
 <header>
   <b>ref</b>
+  <div class="seg" id="modes"><button type="button" class="on" data-mode="web">썸네일·카피</button><button type="button" data-mode="scene">장면·대사</button></div>
   <form id="f"><input id="q" type="search" placeholder="'감성적인 카페 인테리어' 처럼 찾고 싶은 느낌을 입력" autofocus></form>
   <label class="btn ghost" id="upBtn" hidden>업로드<input id="file" type="file" accept="video/*" multiple hidden></label>
 </header>
 <nav>
   <button class="chip on" data-tab="search">레퍼런스 찾기</button>
   <button class="chip" data-tab="board">내 보드 <span id="cnt"></span></button>
-  <span id="srcs"><span style="color:var(--mute);margin:0 4px 0 10px">플랫폼</span></span>
-  <span id="periods"><span style="color:var(--mute);margin:0 4px 0 10px">게시 일시</span><button class="chip" data-p="">전체</button> <button class="chip" data-p="w">최근 7일</button> <button class="chip" data-p="m">최근 30일</button> <button class="chip" data-p="y">최근 1년</button></span>
-  <span id="cats"><span style="color:var(--mute);margin:0 4px 0 10px">카테고리</span><select id="cat"><option value="">전체</option></select></span>
+  <span class="grp" id="srcs"><span class="lbl">플랫폼</span></span>
+  <span class="grp" id="periods"><span class="lbl">게시 일시</span><button class="chip" data-p="">전체</button><button class="chip" data-p="w">최근 7일</button><button class="chip" data-p="m">최근 30일</button><button class="chip" data-p="90d">최근 90일</button><button class="chip" data-p="6m">최근 6개월</button><button class="chip" data-p="y">최근 1년</button><button class="chip" data-p="custom">기간 설정…</button>
+    <span id="customRange" hidden><input type="date" id="from"> ~ <input type="date" id="to"></span></span>
+  <span class="grp" id="cats"><span class="lbl">카테고리</span><select id="cat"><option value="">전체</option></select></span>
   <span style="width:8px"></span>
   <span id="tags"></span>
 </nav>
-<div id="status"></div>
+<div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>검색 결과 대사까지 분석</button></div>
 <main id="grid"></main>
 <div id="empty" hidden></div>
 <div id="drop" hidden>여기에 놓으면 보드에 업로드</div>
@@ -140,10 +187,12 @@ const SRC = {
 };
 const CATS = ['뷰티', '패션', '식품', '건강기능식품·이너뷰티', '다이어트·프로틴', '외식', '가전·디지털', '유아·출산', '생활용품', '리빙·인테리어', '주방용품', '펫', '스포츠·레저', '교육', '여행·숙박', '의료 서비스', '뷰티·웰니스 서비스', '금융·보험', '게임', '자동차·모빌리티 용품', '오피스·문구', 'IT·SaaS', '프랜차이즈·창업', '부동산', '통신·인터넷'];
 $('#cat').insertAdjacentHTML('beforeend', CATS.map((c) => `<option>${c}</option>`).join(''));
-let src = 'all', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
+let mode = 'web', src = 'all', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
 
 const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
 const srcName = () => (src === 'all' ? '전체' : SRC[src].name);
+const fmtDate = (ms) => { const d = new Date(ms); return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; };
+const hover = matchMedia('(hover: hover)').matches; // no hover previews/prefetch on touch screens
 const fileSrc = (v) => '/videos/' + encodeURIComponent(v.file);
 
 $('#srcs').insertAdjacentHTML('beforeend', [['all', '전체'], ...Object.entries(SRC).map(([k, v]) => [k, v.name])]
@@ -161,15 +210,33 @@ function card(v, i) {
     ? `<div class="media">${badge}<img src="${esc(S.thumb(v.ref))}" loading="lazy" alt=""></div>`
     : `<div class="media embed">${badge}<div class="cap">${esc(v.title)}</div><iframe src="${esc(S.embed(v.ref))}" loading="lazy" scrolling="no"></iframe></div>`;
   const sub = [v.channel && '@' + v.channel, v.likes && '♥ ' + v.likes, ...(v.tags || []).map((t) => '#' + t)].filter(Boolean).map(esc).join(' · ');
-  return `<div class="card" data-i="${i}">${media}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div></div></div>`;
+  const date = v.date ? `<div class="date">${fmtDate(v.date)}</div>` : '';
+  return `<div class="card" data-i="${i}">${media}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div>${date}</div></div>`;
+}
+
+// 장면·대사 result: the matching scene's frame, then each matching line with its time (tap one to jump there).
+function sceneCard(v, i) {
+  const S = SRC[v.src];
+  const words = lastQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const mark = (t) => words.reduce((h, w) => h.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (m) => `<mark>${m}</mark>`), esc(t));
+  const hits = v.matches.slice(0, 4).map((m) =>
+    `<div class="hit" data-at="${m.start}"><time>${fmt(m.start)}</time><span class="k">${m.kind === 'say' ? '대사' : '화면'}</span><span>${mark(m.text.length > 80 ? m.text.slice(0, 80) + '…' : m.text)}</span></div>`).join('');
+  const badge = `<span class="badge">${S ? S.name : '내 영상'}</span>`;
+  return `<div class="card" data-i="${i}"><div class="media">${badge}<img src="${esc(v.thumb || '')}" loading="lazy" alt=""></div>
+    <div class="meta"><div class="t">${esc(v.title || '')}</div><div class="sub">${v.channel ? '@' + esc(v.channel) + ' · ' : ''}${v.matches.length}곳 일치</div><div class="hits">${hits}</div></div></div>`;
 }
 
 function render() {
   $('#cnt').textContent = board.length || '';
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#upBtn').hidden = tab !== 'board';
-  $('#srcs').hidden = $('#periods').hidden = $('#cats').hidden = tab !== 'search';
+  $('#srcs').hidden = $('#periods').hidden = $('#cats').hidden = tab !== 'search' || mode === 'scene';
+  $('#modes').hidden = tab !== 'search';
+  document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
   document.querySelectorAll('[data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === period));
+  $('#customRange').hidden = period !== 'custom';
+  $('#batchBtn').hidden = !(tab === 'search' && mode === 'web' && results.some((v) => v.src !== 'pin'));
+  $('#q').placeholder = mode === 'scene' && tab === 'search' ? "영상 속 대사나 화면 글자로 찾기. 예) 무료 배송, 1+1, 구독과 좋아요" : "'감성적인 카페 인테리어' 처럼 찾고 싶은 느낌을 입력";
   document.querySelectorAll('[data-src]').forEach((b) => b.classList.toggle('on', b.dataset.src === src));
   let list = results;
   if (tab === 'board') {
@@ -180,10 +247,12 @@ function render() {
   } else $('#tags').innerHTML = '';
   window.shown = list;
   io.disconnect();
-  $('#grid').innerHTML = list.map(card).join('');
+  $('#grid').innerHTML = list.map(tab === 'search' && mode === 'scene' ? sceneCard : card).join('');
   document.querySelectorAll('#grid video').forEach((el) => io.observe(el));
   $('#empty').hidden = list.length > 0 || $('#status').textContent !== '';
-  $('#empty').textContent = tab === 'search'
+  $('#empty').textContent = tab === 'search' && mode === 'scene'
+    ? (lastQuery ? '분석해 둔 영상 중에 일치하는 대사·화면 글자가 없어요. [썸네일·카피]로 검색한 뒤 [검색 결과 대사까지 분석]을 누르면 검색 대상이 늘어나요.' : '분석해 둔 영상들의 대사와 화면 글자에서 찾아요.')
+    : tab === 'search'
     ? (lastQuery ? '결과가 없어요. 다른 표현으로 찾아보세요.' : '위에 찾고 싶은 느낌을 적고 Enter. 예) 감성적인 카페 인테리어, 스킨케어 언박싱, 자취방 브이로그')
     : '보드가 비었어요. 검색 결과에서 [보드에 저장]하거나 영상을 끌어다 놓으세요.';
 }
@@ -193,22 +262,56 @@ async function search(q) {
   if (!q) return;
   tab = 'search'; lastQuery = q; results = [];
   $('#q').value = q;
+  batchSeq++; // a new search stops a running batch analysis
+  if (mode === 'scene') return searchScenes(q);
   $('#status').textContent = `${srcName()}에서 "${q}" 찾는 중…`;
   render();
-  const want = src + period + $('#cat').value;
+  const range = period === 'custom' ? `&from=${$('#from').value}&to=${$('#to').value}` : '';
+  const want = src + period + range + $('#cat').value;
   try {
     const cat = $('#cat').value.replace(/·/g, ' ');
-    const r = await fetch(`/api/search?src=${src}&period=${period}&q=` + encodeURIComponent(cat ? `${q} ${cat}` : q));
+    const r = await fetch(`/api/search?src=${src}&period=${period}${range}&q=` + encodeURIComponent(cat ? `${q} ${cat}` : q));
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
-    if (q !== lastQuery || want !== src + period + $('#cat').value) return; // a newer search started meanwhile
+    if (q !== lastQuery || mode !== 'web' || want !== src + period + range + $('#cat').value) return; // a newer search started meanwhile
     results = d;
     const failed = (r.headers.get('x-failed') || '').split(',').filter(Boolean).map((k) => SRC[k].name);
-    $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개` + (failed.length ? ` · ${failed.join(', ')}은(는) 못 불러왔어요 (다시 검색하면 재시도)` : '');
+    const noDate = period && src === 'all' ? ' · 핀터레스트는 날짜를 알 수 없어서 기간 필터에서 빠져요' : '';
+    $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개` + (failed.length ? ` · ${failed.join(', ')}은(는) 못 불러왔어요 (다시 검색하면 재시도)` : '') + noDate;
   } catch (e) {
     $('#status').textContent = '검색 실패: ' + e.message;
   }
   render();
+}
+
+async function searchScenes(q) {
+  $('#status').textContent = `분석해 둔 영상에서 "${q}" 찾는 중…`;
+  render();
+  const d = await (await fetch('/api/scenes?q=' + encodeURIComponent(q))).json();
+  if (q !== lastQuery || mode !== 'scene') return;
+  results = d;
+  $('#status').textContent = `대사·화면 글자에 "${q}"가 나오는 영상 ${d.length}개`;
+  render();
+}
+
+// Analyse every video in the current results (2 at a time) so 장면·대사 search can find them.
+let batchSeq = 0;
+async function analyzeAll() {
+  const seq = ++batchSeq;
+  const todo = results.filter((v) => v.src !== 'pin');
+  let done = 0, failed = 0, i = 0;
+  const tick = () => ($('#batchBtn').textContent = `분석 중 ${done + failed}/${todo.length}` + (failed ? ` (실패 ${failed})` : ''));
+  $('#batchBtn').disabled = true; tick();
+  await Promise.all([0, 1].map(async () => {
+    while (i < todo.length && seq === batchSeq) {
+      const v = todo[i++];
+      const r = await fetch(analyzeUrl(v)).catch(() => null);
+      r?.ok ? done++ : failed++;
+      if (seq === batchSeq) tick();
+    }
+  }));
+  $('#batchBtn').disabled = false;
+  $('#batchBtn').textContent = seq === batchSeq ? `분석 완료 ${done}개 — [장면·대사]에서 검색해 보세요` : '검색 결과 대사까지 분석';
 }
 
 async function loadBoard() { board = await (await fetch('/api/videos')).json(); render(); }
@@ -224,10 +327,12 @@ function similarQuery(v) {
 let analysis = null, openSeq = 0; // openSeq: ignore late responses for a video that's no longer open
 
 function analyzeUrl(v) {
-  return v.file ? '/api/analyze?id=' + v.id : `/api/analyze?src=${v.src}&ref=${encodeURIComponent(v.ref)}&url=${encodeURIComponent(v.url)}`;
+  if (v.file) return '/api/analyze?id=' + v.id;
+  const p = new URLSearchParams({ src: v.src, ref: v.ref, url: v.url, title: v.title || '', channel: v.channel || '' });
+  return '/api/analyze?' + p;
 }
 
-async function loadAnalysis(v, seq) {
+async function loadAnalysis(v, seq, at) {
   analysis = null;
   const box = $('#scenes');
   box.innerHTML = '<div class="muted"><span class="spin"></span>영상을 받아서 장면을 나누고 대사·화면 글자를 읽는 중… (처음 한 번 10~60초)</div>';
@@ -241,6 +346,7 @@ async function loadAnalysis(v, seq) {
     $('#player').innerHTML = `<video src="${d.video}" controls playsinline autoplay></video>`;
     const vid = $('#player video');
     vid.ontimeupdate = () => highlight(vid.currentTime);
+    if (at != null) vid.addEventListener('loadedmetadata', () => { vid.currentTime = at + 0.01; }, { once: true });
     $('#dlVideo').href = d.video; $('#dlVideo').hidden = false;
     if (d.scenes[0]) { $('#dlThumb').href = d.scenes[0].img; $('#dlThumb').hidden = false; }
     // Each spoken line goes under the scene it starts in, so a long line isn't repeated across quick cuts.
@@ -291,7 +397,8 @@ function showPane(name) {
   if (name === 'similar' && !$('#simGrid').dataset.for) { $('#simGrid').dataset.for = '1'; loadSimilar(current, openSeq); }
 }
 
-function open(v) {
+function open(v, at) {
+  if (v.boardId) v = board.find((b) => b.id === v.boardId) || v; // 장면·대사 hit on one of my uploads
   const seq = ++openSeq;
   const S = SRC[v.src];
   const saved = v.id ? v : board.find((b) => b.src === v.src && b.ref === v.ref);
@@ -311,7 +418,7 @@ function open(v) {
   $('#simGrid').innerHTML = '';
   showPane('scenes');
   if (!$('#dlg').open) $('#dlg').showModal();
-  loadAnalysis(current, seq);
+  loadAnalysis(current, seq, at);
 }
 
 async function upload(files) {
@@ -328,6 +435,7 @@ $('#f').onsubmit = (e) => { e.preventDefault(); tab === 'search' ? search($('#q'
 $('#q').oninput = () => { if (tab === 'board') render(); };
 document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
   tab = b.dataset.tab; activeTag = null;
+  if (tab === 'board') batchSeq++;
   $('#q').value = tab === 'search' ? lastQuery : '';
   $('#status').textContent = tab === 'search' && lastQuery ? `${srcName()} "${lastQuery}" 레퍼런스 ${results.length}개` : '';
   render();
@@ -338,16 +446,42 @@ document.querySelectorAll('[data-src]').forEach((b) => b.onclick = () => {
 });
 document.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => {
   period = b.dataset.p;
+  if (period === 'custom' && !$('#from').value) {
+    // Start from the last 3 months so the range is usable right away.
+    $('#from').value = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+    $('#to').value = new Date().toISOString().slice(0, 10);
+  }
   if (lastQuery) search(lastQuery); else render();
 });
 $('#cat').onchange = () => { if (lastQuery) search(lastQuery); };
 $('#tags').onclick = (e) => { const t = e.target.dataset.t; if (t) { activeTag = activeTag === t ? null : t; render(); } };
-$('#grid').onclick = (e) => { const c = e.target.closest('.card'); if (c) open(window.shown[c.dataset.i]); };
+$('#grid').onclick = (e) => {
+  const c = e.target.closest('.card');
+  if (!c) return;
+  const v = window.shown[c.dataset.i];
+  const hit = e.target.closest('[data-at]');
+  open(v, hit ? Number(hit.dataset.at) : v.matches?.[0]?.start);
+};
+document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => {
+  mode = b.dataset.mode; results = []; $('#status').textContent = '';
+  if (lastQuery) search(lastQuery); else render();
+});
+$('#from').onchange = $('#to').onchange = () => { if (lastQuery && $('#from').value) search(lastQuery); };
+$('#batchBtn').onclick = analyzeAll;
+
+// Hovering a card for a moment starts its analysis in the background, so it's usually ready when opened.
+const prefetched = new Set();
+$('#grid').addEventListener('mouseover', (e) => {
+  const c = e.target.closest('.card'); const v = c && window.shown[c.dataset.i];
+  if (!hover || !v || mode === 'scene' || v.src === 'pin' || prefetched.has(c)) return;
+  const t = setTimeout(() => { prefetched.add(c); fetch(analyzeUrl(v)).catch(() => {}); }, 700);
+  c.addEventListener('mouseleave', () => clearTimeout(t), { once: true });
+});
 
 // Hover preview for Shorts: swap in a muted autoplaying embed over the thumbnail.
 $('#grid').addEventListener('mouseover', (e) => {
   const c = e.target.closest('.card'); const v = c && window.shown[c.dataset.i];
-  if (v?.src !== 'yt' || c.querySelector('iframe')) return;
+  if (!hover || mode === 'scene' || v?.src !== 'yt' || c.querySelector('iframe')) return;
   c.querySelector('.media').insertAdjacentHTML('beforeend', `<iframe src="${SRC.yt.embed(v.ref, `&autoplay=1&mute=1&controls=0&loop=1&playlist=${v.ref}`)}" allow="autoplay"></iframe>`);
   c.addEventListener('mouseleave', () => c.querySelector('iframe')?.remove(), { once: true });
 });

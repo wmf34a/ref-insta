@@ -55,7 +55,55 @@ const linkOk = (src, link) => {
   }
 };
 
-const PERIODS = new Set(['w', 'm', 'y']); // past week / month / year (Google-style qdr filter)
+// Posting-date filter. Firecrawl honours only Google's qdr:w/m/y (a custom cdr: range is ignored), so we
+// search with the narrowest qdr that covers the range, then keep posts whose real date falls inside it.
+const DAY = 86_400_000;
+const PRESETS = { w: 7, m: 31, '90d': 90, '6m': 183, y: 365 };
+function dateRange(params) {
+  const now = Date.now();
+  let min = null;
+  let max = null;
+  const p = params.get('period');
+  if (PRESETS[p]) min = now - PRESETS[p] * DAY;
+  else if (p === 'custom') {
+    const from = Date.parse(params.get('from'));
+    const to = Date.parse(params.get('to'));
+    if (!Number.isNaN(from)) min = from;
+    if (!Number.isNaN(to)) max = to + DAY - 1; // "to" includes that whole day
+  }
+  if (min == null && max == null) return { qdr: '', min, max };
+  const age = min == null ? Infinity : (now - min) / DAY;
+  const qdr = age <= 7 ? 'w' : age <= 31 ? 'm' : age <= 366 ? 'y' : '';
+  return { qdr, min: min ?? -Infinity, max: max ?? Infinity };
+}
+
+// When was a post published (ms), or null. TikTok ids start with a unix timestamp; Instagram/Threads shortcodes
+// are base64 media ids whose top bits are ms since 2011-08-24; YouTube needs one page fetch (cached).
+const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+const igTime = (code) => Number(([...code.slice(0, 11)].reduce((n, c) => n * 64n + BigInt(B64.indexOf(c)), 0n) >> 23n) + 1314220021721n);
+const ytTime = (id) =>
+  cached('date:' + id, async () => {
+    const r = await fetch(`https://www.youtube.com/shorts/${id}`, { headers: { 'user-agent': 'Mozilla/5.0', 'accept-language': 'ko' } });
+    const m = /"publishDate":"([^"]+)"/.exec(await r.text());
+    return m ? Date.parse(m[1]) : null;
+  });
+async function postTime(v) {
+  try {
+    if (v.src === 'tt') return Number(BigInt(v.ref) >> 32n) * 1000;
+    if (v.src === 'ig') return igTime(v.ref);
+    if (v.src === 'th') return igTime(v.ref.split('/post/')[1]);
+  } catch {}
+  return null; // YouTube: see withYtDates. Pinterest ids carry no date.
+}
+// YouTube dates cost a page fetch each (~1s), so only look them up when a date filter needs them.
+const withYtDates = (list) => pool(list.filter((v) => v.src === 'yt' && v.date == null), 10, async (v) => (v.date = await ytTime(v.ref).catch(() => null)));
+// Run fn over items, at most n at a time (YouTube date lookups: 40 at once gets throttled).
+async function pool(items, n, fn) {
+  const out = [];
+  let i = 0;
+  await Promise.all(Array.from({ length: n }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } }));
+  return out;
+}
 
 // Firecrawl key: FIRECRAWL_API_KEY, or a .firecrawl-key file next to this script (what run.cmd / run.sh write).
 // Read on every search so adding the key doesn't need a restart.
@@ -64,8 +112,8 @@ const firecrawlKey = () => process.env.FIRECRAWL_API_KEY || (fs.existsSync(KEY_F
 
 // Firecrawl web search: REST API when a key is known (any OS); otherwise the logged-in `firecrawl` CLI
 // (macOS/Linux only — Windows can't spawn its .cmd shim without a shell, and a shell would parse the query).
-async function webSearch(query, period) {
-  const tbs = period ? `qdr:${period}` : undefined;
+async function webSearch(query, qdr) {
+  const tbs = qdr ? `qdr:${qdr}` : undefined;
   const key = firecrawlKey();
   if (key) {
     const r = await fetch('https://api.firecrawl.dev/v2/search', {
@@ -82,11 +130,11 @@ async function webSearch(query, period) {
   return (await runJson('firecrawl', ['search', query, '--limit', '40', '--json', ...(tbs ? ['--tbs', tbs] : [])])).data?.web || [];
 }
 
-async function searchSource(src, q, period) {
+async function searchSource(src, q, qdr) {
   const { site, re } = SOURCES[src];
-  const hits = await webSearch(`site:${site} ${q}`, period);
+  const hits = await webSearch(`site:${site} ${q}`, qdr);
   const seen = new Set(); // the same post often shows up under several URLs; drop repeats by id and by caption
-  return hits
+  const list = hits
     .map((r) => {
       const ref = re.exec(r.url)?.[1];
       // Meta descriptions look like: '3 likes, 0 comments - c_pop_studio on June 11, 2025: "caption…'
@@ -95,13 +143,18 @@ async function searchSource(src, q, period) {
       return ref && { src, ref, url: r.url, title, channel: m?.[2] || '', likes: m?.[1] || '' };
     })
     .filter((v) => v && !seen.has(v.ref) && !seen.has(v.title) && seen.add(v.ref).add(v.title));
+  await pool(list, 8, async (v) => (v.date = await postTime(v)));
+  return list;
 }
 
+const inRange = (range) => (v) => range.min == null || (v.date != null && v.date >= range.min && v.date <= range.max);
+
 // "all": every source in parallel, interleaved so one platform doesn't bury the rest. A failing source is skipped.
-async function searchAll(q, period) {
-  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => cached(`${s}:${period}:${q}`, () => searchSource(s, q, period))));
+async function searchAll(q, range) {
+  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => cached(`${s}:${range.qdr}:${q}`, () => searchSource(s, q, range.qdr))));
   if (settled.every((r) => r.status === 'rejected')) throw settled[0].reason; // e.g. Firecrawl 429 — show it instead of "0 results"
-  const lists = settled.map((r) => (r.status === 'fulfilled' ? r.value : []));
+  if (range.min != null) await withYtDates(settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
+  const lists = settled.map((r) => (r.status === 'fulfilled' ? r.value.filter(inRange(range)) : []));
   const failed = Object.keys(SOURCES).filter((_, i) => settled[i].status === 'rejected');
   const out = [];
   for (let i = 0; i < 40; i++) for (const l of lists) if (l[i]) out.push(l[i]);
@@ -164,9 +217,21 @@ async function transcribe(dir) {
   if (!fs.existsSync(model) || !(fs.existsSync(WHISPER_CLI) || (await has(WHISPER_CLI)))) return null;
   const wav = path.join(dir, 'audio.wav');
   await run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(dir, 'video.mp4'), '-ar', '16000', '-ac', '1', wav]);
-  await run(WHISPER_CLI, ['-m', model, '-l', 'auto', '-sns', '-oj', '-of', path.join(dir, 'whisper'), '-f', wav]);
+  // Greedy decoding (-bs 1 -bo 1): same Korean transcript as beam search on our samples, about 2x faster.
+  const args = ['-m', model, '-l', 'auto', '-sns', '-bs', '1', '-bo', '1', '-t', String(os.cpus().length), '-oj', '-of', path.join(dir, 'whisper'), '-f', wav];
+  await run(WHISPER_CLI, args);
   const j = JSON.parse(fs.readFileSync(path.join(dir, 'whisper.json'), 'utf8'));
-  return (j.transcription || []).map((s) => [s.offsets.from / 1000, s.offsets.to / 1000, s.text.trim()]).filter(([, , t]) => t && !hallucinated(t));
+  const lines = (j.transcription || []).map((s) => [s.offsets.from / 1000, s.offsets.to / 1000, s.text.trim()]).filter(([, , t]) => t && !hallucinated(t));
+  return dropLoops(lines);
+}
+
+// Whisper also loops on music: the same line again and again ("2. 뱃살", "3. 뱃살", …). If one line (ignoring
+// digits) makes up 3+ lines and most of the transcript, it's a loop, not speech.
+function dropLoops(lines) {
+  const norm = (t) => t.replace(/[\d.\s]/g, '');
+  const counts = new Map();
+  for (const [, , t] of lines) counts.set(norm(t), (counts.get(norm(t)) || 0) + 1);
+  return lines.filter(([, , t]) => !(counts.get(norm(t)) >= 3 && counts.get(norm(t)) >= lines.length / 2));
 }
 
 // On music-only audio Whisper tends to emit one character repeated, often in a random script. Drop those lines.
@@ -177,14 +242,17 @@ function hallucinated(t) {
   return chars.length > 20 && new Set(chars).size / chars.length < 0.15;
 }
 
-// key: cache folder name; link: page to download with yt-dlp, or file: a local upload; ytId: YouTube id for captions.
-async function analyze({ key, link, file, ytId }) {
+// key: cache folder name; link: page to download with yt-dlp, or file: a local upload; ytId: YouTube id for captions;
+// meta: title/src/url etc. kept with the result so the scene & script search can show and open it.
+async function analyze({ key, link, file, ytId, meta = {} }) {
   const dir = path.join(CACHE_DIR, key);
   const done = path.join(dir, 'analysis.json');
   if (fs.existsSync(done)) return JSON.parse(fs.readFileSync(done, 'utf8'));
   fs.mkdirSync(dir, { recursive: true });
   const video = path.join(dir, 'video.mp4');
 
+  // Captions don't need the video, so fetch them while it downloads.
+  const captions = ytId ? fetchCaptions(ytId).catch(() => []) : Promise.resolve([]);
   if (!fs.existsSync(video) && file) fs.copyFileSync(file, video);
   if (!fs.existsSync(video)) {
     try {
@@ -193,30 +261,56 @@ async function analyze({ key, link, file, ytId }) {
       throw new Error('영상을 받지 못했어요. 이미지 게시물이거나 접속이 막힌 사이트일 수 있어요. (' + e.message + ')');
     }
   }
-  const duration = Number(await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', video]));
 
-  // One pass: keep the first frame + every frame where the picture changes a lot, log their times, save thumbnails.
-  for (const f of fs.readdirSync(dir)) if (/^s\d+\.jpg$/.test(f)) fs.rmSync(path.join(dir, f));
-  const log = await run('ffmpeg', ['-v', 'info', '-y', '-i', video, '-vf', "select='eq(n,0)+gt(scene,0.3)',showinfo,scale=540:-2", '-fps_mode', 'vfr', '-q:v', '4', path.join(dir, 's%03d.jpg')]);
-  let starts = [...log.matchAll(/pts_time:([\d.]+)/g)].map((m) => Number(m[1]));
-  const imgs = fs.readdirSync(dir).filter((f) => /^s\d+\.jpg$/.test(f)).sort();
-  // ponytail: 0.3 scene threshold is a guess; tune if talking-head videos split too little or fast edits too much.
-  const scenes = imgs.slice(0, starts.length).map((f, i) => ({ start: starts[i], end: starts[i + 1] ?? duration, img: `/cache/${key}/${f}` }));
-
-  const texts = await ocr(imgs.map((f) => path.join(dir, f))).catch(() => []);
-  scenes.forEach((s, i) => (s.text = texts[i] || ''));
-
-  let script = ytId ? await fetchCaptions(ytId).catch(() => []) : [];
-  let scriptSource = script.length ? 'captions' : null;
-  if (!script.length) {
+  // Pictures (scene cuts → frames → OCR) and sound (captions or Whisper) are independent: run them side by side.
+  const visuals = (async () => {
+    const duration = Number(await run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', video]));
+    // One pass: keep the first frame + every frame where the picture changes a lot, log their times, save thumbnails.
+    for (const f of fs.readdirSync(dir)) if (/^s\d+\.jpg$/.test(f)) fs.rmSync(path.join(dir, f));
+    const log = await run('ffmpeg', ['-v', 'info', '-y', '-i', video, '-vf', "select='eq(n,0)+gt(scene,0.3)',showinfo,scale=540:-2", '-fps_mode', 'vfr', '-q:v', '4', path.join(dir, 's%03d.jpg')]);
+    const starts = [...log.matchAll(/pts_time:([\d.]+)/g)].map((m) => Number(m[1]));
+    const imgs = fs.readdirSync(dir).filter((f) => /^s\d+\.jpg$/.test(f)).sort();
+    // ponytail: 0.3 scene threshold is a guess; tune if talking-head videos split too little or fast edits too much.
+    const scenes = imgs.slice(0, starts.length).map((f, i) => ({ start: starts[i], end: starts[i + 1] ?? duration, img: `/cache/${key}/${f}` }));
+    const texts = await ocr(imgs.slice(0, scenes.length).map((f) => path.join(dir, f))).catch(() => []);
+    scenes.forEach((s, i) => (s.text = texts[i] || ''));
+    return { duration, scenes };
+  })();
+  const speech = (async () => {
+    const c = await captions;
+    if (c.length) return { script: c, scriptSource: 'captions' };
     const w = await transcribe(dir).catch(() => null);
-    if (w?.length) (script = w), (scriptSource = 'whisper');
-  }
+    return w?.length ? { script: w, scriptSource: 'whisper' } : { script: [], scriptSource: null };
+  })();
 
-  const result = { duration, video: `/cache/${key}/video.mp4`, scenes, script, scriptSource };
+  const result = { ...meta, ...(await visuals), ...(await speech), video: `/cache/${key}/video.mp4`, analyzedAt: Date.now() };
   fs.writeFileSync(done, JSON.stringify(result));
   return result;
 }
+// "장면·대사" search: look through every analysis on disk — spoken lines and on-screen text — for all the words.
+// ponytail: reads every analysis.json per query; fine for hundreds of videos, add an index if it grows to thousands.
+function searchScenes(q) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length || !fs.existsSync(CACHE_DIR)) return [];
+  const hitAll = (t) => { const l = t.toLowerCase(); return words.every((w) => l.includes(w)); };
+  const out = [];
+  for (const key of fs.readdirSync(CACHE_DIR)) {
+    const f = path.join(CACHE_DIR, key, 'analysis.json');
+    if (!fs.existsSync(f)) continue;
+    const a = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (!a.src && !a.boardId) continue; // analysed before titles were stored; can't be opened from here
+    const sceneAt = (t) => a.scenes[Math.max(0, a.scenes.findLastIndex((s) => s.start <= t + 0.05))];
+    const matches = [
+      ...a.script.filter(([, , t]) => hitAll(t)).map(([start, , text]) => ({ kind: 'say', start, text, img: sceneAt(start)?.img })),
+      ...a.scenes.filter((s) => s.text && hitAll(s.text)).map((s) => ({ kind: 'screen', start: s.start, text: s.text, img: s.img })),
+    ].sort((x, y) => x.start - y.start);
+    if (!matches.length && !hitAll(a.title || '')) continue;
+    const { src, ref, url, title, channel, boardId } = a;
+    out.push({ src, ref, url, title, channel, boardId, matches, thumb: matches[0]?.img || a.scenes[0]?.img });
+  }
+  return out.sort((x, y) => y.matches.length - x.matches.length);
+}
+
 const load = () => (fs.existsSync(DATA) ? JSON.parse(fs.readFileSync(DATA, 'utf8')) : []);
 const save = (list) => fs.writeFileSync(DATA, JSON.stringify(list, null, 2));
 
@@ -271,28 +365,33 @@ http
         const q = (url.searchParams.get('q') || '').trim();
         if (!q) return json(res, 400, { error: '검색어가 비었어요' });
         const src = url.searchParams.get('src');
-        const period = PERIODS.has(url.searchParams.get('period')) ? url.searchParams.get('period') : '';
+        const range = dateRange(url.searchParams);
         if (src === 'all') {
-          const { out, failed } = await searchAll(q, period);
+          const { out, failed } = await searchAll(q, range);
           res.setHeader('x-failed', failed.join(','));
           return json(res, 200, out);
         }
         if (!SOURCES[src]) return json(res, 400, { error: 'unknown source' });
-        return json(res, 200, await cached(`${src}:${period}:${q}`, () => searchSource(src, q, period)));
+        const list = await cached(`${src}:${range.qdr}:${q}`, () => searchSource(src, q, range.qdr));
+        if (range.min != null) await withYtDates(list);
+        return json(res, 200, list.filter(inRange(range)));
       }
+      if (req.method === 'GET' && p === '/api/scenes') return json(res, 200, searchScenes((url.searchParams.get('q') || '').trim()));
       if (req.method === 'GET' && p === '/api/analyze') {
         const id = url.searchParams.get('id');
         if (id) {
           const item = load().find((v) => v.id === id && v.file);
           if (!item) return json(res, 404, { error: 'not found' });
-          return json(res, 200, await cached('a:file:' + id, () => analyze({ key: 'file_' + id, file: path.join(VIDEO_DIR, item.file) })));
+          const meta = { boardId: id, title: item.title };
+          return json(res, 200, await cached('a:file:' + id, () => analyze({ key: 'file_' + id, file: path.join(VIDEO_DIR, item.file), meta })));
         }
         const src = url.searchParams.get('src');
         const ref = url.searchParams.get('ref') || '';
         const link = url.searchParams.get('url') || '';
         if (!SOURCES[src] || !REF_OK.test(ref) || !linkOk(src, link)) return json(res, 400, { error: 'bad item' });
         const key = `${src}_${ref.replace(/[^\w-]/g, '_')}`;
-        return json(res, 200, await cached('a:' + key, () => analyze({ key, link, ytId: src === 'yt' ? ref : null })));
+        const meta = { src, ref, url: link, title: (url.searchParams.get('title') || '').slice(0, 300), channel: (url.searchParams.get('channel') || '').slice(0, 100) };
+        return json(res, 200, await cached('a:' + key, () => analyze({ key, link, ytId: src === 'yt' ? ref : null, meta })));
       }
       if (req.method === 'POST' && p === '/api/save') {
         const { src, ref, url: link, title, channel } = JSON.parse((await readBody(req)).toString() || '{}');

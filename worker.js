@@ -11,8 +11,17 @@ const json = (body, status = 200, headers = {}) =>
 // Whole site behind one password (HTTP Basic; any user name). Constant-time-ish compare via hashing.
 async function authed(req, env) {
   const m = /^Basic (.+)$/.exec(req.headers.get('authorization') || '');
-  if (!m || !env.APP_PASSWORD) return false;
-  const pass = atob(m[1]).split(':').slice(1).join(':');
+  if (!m || !env.APP_PASSWORD?.trim()) return false;
+  // Browsers send the credentials as UTF-8 (we ask for it in the realm); atob alone would mangle 한글 passwords.
+  let raw;
+  try {
+    raw = new TextDecoder().decode(Uint8Array.from(atob(m[1]), (c) => c.charCodeAt(0)));
+  } catch {
+    return false;
+  }
+  // Trim both sides: a pasted secret or typed password often carries a stray space/newline.
+  const pass = raw.split(':').slice(1).join(':').trim();
+  env = { ...env, APP_PASSWORD: env.APP_PASSWORD.trim() };
   const h = async (s) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
   const [a, b] = await Promise.all([h(pass), h(env.APP_PASSWORD)]);
   return a.every((x, i) => x === b[i]);

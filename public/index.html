@@ -29,7 +29,11 @@
   .media.embed { aspect-ratio:9/15; background:var(--bg); overflow:hidden; }
   .media.embed .cap { position:absolute; inset:0; padding:14px; color:var(--mute); font-size:13px; overflow:hidden; }
   .media.embed iframe { background:transparent; }
-  .badge { position:absolute; left:6px; top:6px; z-index:1; background:rgba(0,0,0,.72); color:#fff; font-size:11px; font-weight:600; padding:1px 7px; border-radius:4px; }
+  /* Platform badge: always a white pill so the logo reads on any thumbnail, light or dark. */
+  .badge { position:absolute; left:8px; top:8px; z-index:1; display:inline-flex; align-items:center; gap:5px; background:#fff; color:#161616; font-size:12px; font-weight:600; line-height:1; padding:4px 9px 4px 5px; border-radius:999px; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+  .badge svg, .pf svg { width:16px; height:16px; flex:none; display:block; }
+  .pf { display:inline-flex; align-items:center; gap:5px; vertical-align:middle; }
+  @media (max-width:600px) { .badge { font-size:11px; padding:3px 7px 3px 4px; } .badge svg { width:14px; height:14px; } }
   #player .light { background:#fff; }
   .dur { position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.75); color:#fff; font-size:11px; padding:1px 6px; border-radius:4px; }
   .card .meta { padding:8px 10px 10px; }
@@ -187,6 +191,17 @@ const SRC = {
   pin: { name: '핀터레스트', embed: (r) => `https://assets.pinterest.com/ext/embed.html?id=${r}`, light: true },
   th: { name: '스레드', embed: (r) => `https://www.threads.com/${r}/embed`, light: true },
 };
+// Platform marks (inline SVG so they work offline and inside the Worker's CSP-free page).
+const ICON = {
+  yt: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1" y="4.5" width="22" height="15" rx="4.5" fill="#FF0000"/><path d="M10 8.7v6.6l5.8-3.3z" fill="#fff"/></svg>',
+  ig: '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="igGrad" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".6" stop-color="#D62976"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs><rect x="2" y="2" width="20" height="20" rx="6" fill="url(#igGrad)"/><circle cx="12" cy="12" r="4.3" fill="none" stroke="#fff" stroke-width="2"/><circle cx="17.2" cy="6.8" r="1.3" fill="#fff"/></svg>',
+  tt: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#000"/><path d="M13 5h2.3c.2 1.6 1.2 2.8 2.9 3v2.3c-1.1 0-2.1-.3-2.9-.9v5.1a4.2 4.2 0 1 1-4.2-4.2l.7.1v2.4a1.9 1.9 0 1 0 1.2 1.7z" fill="#25F4EE" transform="translate(-.7 -.5)"/><path d="M13 5h2.3c.2 1.6 1.2 2.8 2.9 3v2.3c-1.1 0-2.1-.3-2.9-.9v5.1a4.2 4.2 0 1 1-4.2-4.2l.7.1v2.4a1.9 1.9 0 1 0 1.2 1.7z" fill="#FE2C55" transform="translate(.7 .5)"/><path d="M13 5h2.3c.2 1.6 1.2 2.8 2.9 3v2.3c-1.1 0-2.1-.3-2.9-.9v5.1a4.2 4.2 0 1 1-4.2-4.2l.7.1v2.4a1.9 1.9 0 1 0 1.2 1.7z" fill="#fff"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#E60023"/><path d="M12.3 5.3c-3.6 0-5.5 2.6-5.5 4.8 0 1.3.5 2.5 1.6 3 .2.1.3 0 .4-.2l.2-.6c0-.2 0-.3-.2-.5-.3-.4-.5-.9-.5-1.6 0-2.1 1.6-4 4.1-4 2.2 0 3.5 1.4 3.5 3.2 0 2.4-1.1 4.5-2.7 4.5-.9 0-1.5-.7-1.3-1.6.2-1.1.7-2.2.7-3 0-.7-.4-1.3-1.2-1.3-.9 0-1.7 1-1.7 2.3 0 .8.3 1.4.3 1.4l-1.1 4.6c-.3 1.4 0 3.1 0 3.2 0 .1.1.1.2 0 .1-.1 1.1-1.4 1.5-2.7l.6-2.2c.3.6 1.2 1.1 2.1 1.1 2.8 0 4.7-2.6 4.7-6 0-2.6-2.2-5-5.6-5z" fill="#fff"/></svg>',
+  th: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#000"/><text x="12" y="17.2" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" font-family="Arial, sans-serif">@</text></svg>',
+  file: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="6" fill="#3b5bfd"/><path d="M9 7.5v9l7-4.5z" fill="#fff"/></svg>',
+};
+const pf = (k) => `${ICON[k] || ICON.file}<span>${SRC[k]?.name || '내 영상'}</span>`;
+
 const CATS = ['뷰티', '패션', '식품', '건강기능식품·이너뷰티', '다이어트·프로틴', '외식', '가전·디지털', '유아·출산', '생활용품', '리빙·인테리어', '주방용품', '펫', '스포츠·레저', '교육', '여행·숙박', '의료 서비스', '뷰티·웰니스 서비스', '금융·보험', '게임', '자동차·모빌리티 용품', '오피스·문구', 'IT·SaaS', '프랜차이즈·창업', '부동산', '통신·인터넷'];
 $('#cat').insertAdjacentHTML('beforeend', CATS.map((c) => `<option>${c}</option>`).join(''));
 let mode = 'web', src = 'all', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
@@ -198,16 +213,16 @@ const hover = matchMedia('(hover: hover)').matches; // no hover previews/prefetc
 const fileSrc = (v) => '/videos/' + encodeURIComponent(v.file);
 
 $('#srcs').insertAdjacentHTML('beforeend', [['all', '전체'], ...Object.entries(SRC).map(([k, v]) => [k, v.name])]
-  .map(([k, n]) => `<button class="chip" data-src="${k}">${n}</button>`).join(' '));
+  .map(([k, n]) => `<button class="chip" data-src="${k}">${k === 'all' ? n : `<span class="pf">${ICON[k]}${n}</span>`}</button>`).join(' '));
 
 // Uploaded files autoplay (muted) only while on screen, so a long grid stays light.
 const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause()), { rootMargin: '200px' });
 
 function card(v, i) {
   const S = SRC[v.src];
-  const badge = S && src === 'all' || S && tab === 'board' ? `<span class="badge">${S.name}</span>` : '';
+  const badge = S ? `<span class="badge">${pf(v.src)}</span>` : '';
   const media = !S
-    ? `<div class="media"><video src="${fileSrc(v)}#t=0.1" muted loop playsinline preload="metadata"></video></div>`
+    ? `<div class="media"><span class="badge">${pf('file')}</span><video src="${fileSrc(v)}#t=0.1" muted loop playsinline preload="metadata"></video></div>`
     : S.thumb
     ? `<div class="media">${badge}<img src="${esc(S.thumb(v.ref))}" loading="lazy" alt=""></div>`
     : `<div class="media embed">${badge}<div class="cap">${esc(v.title)}</div><iframe src="${esc(S.embed(v.ref))}" loading="lazy" scrolling="no"></iframe></div>`;
@@ -223,7 +238,7 @@ function sceneCard(v, i) {
   const mark = (t) => words.reduce((h, w) => h.replace(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), (m) => `<mark>${m}</mark>`), esc(t));
   const hits = v.matches.slice(0, 4).map((m) =>
     `<div class="hit" data-at="${m.start}"><time>${fmt(m.start)}</time><span class="k">${m.kind === 'say' ? '대사' : '화면'}</span><span>${mark(m.text.length > 80 ? m.text.slice(0, 80) + '…' : m.text)}</span></div>`).join('');
-  const badge = `<span class="badge">${S ? S.name : '내 영상'}</span>`;
+  const badge = `<span class="badge">${pf(S ? v.src : 'file')}</span>`;
   return `<div class="card" data-i="${i}"><div class="media">${badge}<img src="${esc(v.thumb || '')}" loading="lazy" alt=""></div>
     <div class="meta"><div class="t">${esc(v.title || '')}</div><div class="sub">${v.channel ? '@' + esc(v.channel) + ' · ' : ''}${v.matches.length}곳 일치</div><div class="hits">${hits}</div></div></div>`;
 }
@@ -411,7 +426,7 @@ function open(v, at) {
     ? `<iframe class="${S.light ? 'light' : ''}" src="${esc(v.src === 'yt' ? S.embed(v.ref, '&autoplay=1') : S.embed(v.ref))}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
     : `<video src="${fileSrc(v)}" controls playsinline loop autoplay></video>`;
   $('#dTitle').textContent = v.title;
-  $('#dSub').textContent = [S?.name, v.channel && '@' + v.channel, v.likes && '♥ ' + v.likes].filter(Boolean).join(' · ');
+  $('#dSub').innerHTML = [S && `<span class="pf">${pf(v.src)}</span>`, v.channel && esc('@' + v.channel), v.likes && esc('♥ ' + v.likes)].filter(Boolean).join(' · ');
   $('#saveBtn').hidden = !S || !!saved;
   $('#outLink').hidden = !S;
   $('#outLink').href = v.url || '#';

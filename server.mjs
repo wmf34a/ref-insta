@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, handleSearch, newBoardItem, PER_SOURCE } from './search.mjs';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, handleSearch, newBoardItem, PER_SOURCE, fetchStats } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -291,6 +291,12 @@ http
         const r = await handleSearch(url.searchParams, webSearch, searchStore);
         if (r.failed) res.setHeader('x-failed', r.failed.join(','));
         return json(res, r.status, r.body);
+      }
+      if (req.method === 'GET' && p === '/api/stats') {
+        const src = url.searchParams.get('src');
+        const ref = url.searchParams.get('ref') || '';
+        if (!SOURCES[src] || !REF_OK.test(ref)) return json(res, 400, { error: 'bad item' });
+        return json(res, 200, await fetchStats(src, ref).catch(() => ({})));
       }
       if (req.method === 'GET' && p === '/api/scenes') return json(res, 200, searchScenes((url.searchParams.get('q') || '').trim()));
       if (req.method === 'GET' && p === '/api/analyze') {

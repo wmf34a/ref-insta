@@ -3,7 +3,7 @@
 // proxied to the analysis PC (server.mjs), which registers its Cloudflare Tunnel URL here via /api/analyzer.
 //
 // Secrets: APP_PASSWORD (site login), FIRECRAWL_API_KEY, ANALYZER_TOKEN (shared with the PC's .cloud.json).
-import { handleSearch, firecrawlSearch, newBoardItem } from './search.mjs';
+import { handleSearch, firecrawlSearch, newBoardItem, fetchStats, SOURCES, REF_OK } from './search.mjs';
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -73,6 +73,13 @@ export default {
         };
         const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store);
         return json(r.body, r.status, r.failed ? { 'x-failed': r.failed.join(',') } : {});
+      }
+
+      if (m === 'GET' && p === '/api/stats') {
+        const src = url.searchParams.get('src');
+        const ref = url.searchParams.get('ref') || '';
+        if (!SOURCES[src] || !REF_OK.test(ref)) return json({ error: 'bad item' }, 400);
+        return json(await fetchStats(src, ref).catch(() => ({})));
       }
 
       // Board (D1)

@@ -86,9 +86,9 @@ export async function searchSource(webSearch, src, q, qdr) {
     .map((r) => {
       const ref = re.exec(r.url)?.[1];
       // Meta descriptions look like: '3 likes, 0 comments - c_pop_studio on June 11, 2025: "caption…'
-      const m = /^([\d,.KkMm]+) likes?.*? - ([\w.]+) on [^:]+: "?(.*)/.exec(r.description || '');
-      const title = (m?.[3] || r.title || '').replace(/\s*[-|]\s*(YouTube|Instagram|TikTok|Pinterest|Threads)$/i, '').trim();
-      return ref && { src, ref, url: r.url, title, channel: m?.[2] || '', likes: m?.[1] || '' };
+      const m = /^([\d,.KkMm]+) likes?(?:, ([\d,.KkMm]+) comments?)? - ([\w.]+) on [^:]+: "?(.*)/.exec(r.description || '');
+      const title = (m?.[4] || r.title || '').replace(/\s*[-|]\s*(YouTube|Instagram|TikTok|Pinterest|Threads)$/i, '').trim();
+      return ref && { src, ref, url: r.url, title, channel: m?.[3] || '', likes: m?.[1] || '', comments: m?.[2] || '' };
     })
     .filter((v) => v && !seen.has(v.ref) && !seen.has(v.title) && seen.add(v.ref).add(v.title));
   await pool(list, 8, async (v) => (v.date = await postTime(v)));
@@ -163,4 +163,35 @@ export async function handleSearch(params, webSearch, store) {
 export function newBoardItem({ src, ref, url, title, channel }, id) {
   if (!SOURCES[src] || !REF_OK.test(ref || '') || !linkOk(src, url)) return null;
   return { id, src, ref, url: String(url), title: String(title || ''), channel: String(channel || ''), tags: [], memo: '', created: Date.now() };
+}
+
+// Views / likes / comments / saves for one post, read from public pages (no Firecrawl credits).
+// Returns numbers, or display strings where the page only has a rounded label (YouTube likes: "1.8천").
+// Instagram/Threads pages need a login, so Instagram counts come from the search snippet instead.
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140 Safari/537.36';
+const page = async (u) => (await fetch(u, { headers: { 'user-agent': UA, 'accept-language': 'ko' } })).text();
+const STATS_REF = { yt: /^[\w-]{11}$/, tt: /^\d+$/, pin: /^\d+$/ };
+export function fetchStats(src, ref) {
+  if (!STATS_REF[src]?.test(ref)) return Promise.resolve({});
+  return cached(`stats:${src}:${ref}`, async () => {
+    if (src === 'yt') {
+      const h = await page(`https://www.youtube.com/watch?v=${ref}`);
+      return {
+        views: Number(/"viewCount":"(\d+)"/.exec(h)?.[1]) || null,
+        likes: /"iconName":"LIKE","title":"([\d.,]+[천만억KMB]?)"/.exec(h)?.[1] || null, // hidden likes show as "좋아요"
+        comments: /"contextualInfo":\{"runs":\[\{"text":"([\d.,]+[천만억KMB]?)"/.exec(h)?.[1] || null,
+      };
+    }
+    if (src === 'tt') {
+      const h = await page(`https://www.tiktok.com/@_/video/${ref}`);
+      const st = new RegExp(`"id":"${ref}"[\\s\\S]*?"stats":(\\{[^}]*\\})`).exec(h)?.[1];
+      const j = st ? JSON.parse(st) : {};
+      return { views: j.playCount ?? null, likes: j.diggCount ?? null, comments: j.commentCount ?? null };
+    }
+    if (src === 'pin') {
+      const j = JSON.parse(await page(`https://widgets.pinterest.com/v3/pidgets/pins/info/?pin_ids=${ref}`));
+      return { saves: j.data?.[0]?.aggregated_pin_data?.aggregated_stats?.saves ?? null };
+    }
+    return {};
+  });
 }

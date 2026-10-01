@@ -96,6 +96,9 @@
   #offline { margin:10px 16px 0; padding:8px 12px; border-radius:10px; font-size:13px; background:color-mix(in srgb, #f5a623 18%, var(--card)); border:1px solid color-mix(in srgb, #f5a623 45%, transparent); }
   #batchBtn { padding:5px 12px; font-size:12px; white-space:nowrap; }
   .date { color:var(--mute); font-size:12px; }
+  .stats { display:flex; gap:10px; flex-wrap:wrap; color:var(--mute); font-size:12px; margin-top:4px; min-height:16px; }
+  .stats span { display:inline-flex; align-items:center; gap:3px; }
+  .stats svg { width:13px; height:13px; fill:none; stroke:currentColor; stroke-width:2; }
   .hits { margin-top:6px; display:flex; flex-direction:column; gap:4px; }
   .hit { display:flex; gap:6px; font-size:12px; line-height:1.4; padding:4px 6px; border-radius:6px; background:var(--bg); }
   .hit time { color:var(--accent); font-variant-numeric:tabular-nums; flex:none; }
@@ -241,9 +244,9 @@ function card(v, i) {
     : S.thumb
     ? `<div class="media">${badge}<img src="${esc(S.thumb(v.ref))}" loading="lazy" alt=""></div>`
     : `<div class="media embed">${badge}<div class="cap">${esc(v.title)}</div><iframe src="${esc(S.embed(v.ref))}" loading="lazy" scrolling="no"></iframe></div>`;
-  const sub = [v.channel && '@' + v.channel, v.likes && '♥ ' + v.likes, ...(v.tags || []).map((t) => '#' + t)].filter(Boolean).map(esc).join(' · ');
+  const sub = [v.channel && '@' + v.channel, ...(v.tags || []).map((t) => '#' + t)].filter(Boolean).map(esc).join(' · ');
   const date = v.date ? `<div class="date">${fmtDate(v.date)}</div>` : '';
-  return `<div class="card" data-i="${i}">${media}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div>${date}</div></div>`;
+  return `<div class="card" data-i="${i}">${media}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div>${date}<div class="stats">${statsHtml(v)}</div></div></div>`;
 }
 
 // 영상 속 말 result: the matching scene's frame, then each matching line with its time (tap one to jump there).
@@ -257,6 +260,41 @@ function sceneCard(v, i) {
   return `<div class="card" data-i="${i}"><div class="media">${badge}<img src="${esc(v.thumb || '')}" loading="lazy" alt=""></div>
     <div class="meta"><div class="t">${esc(v.title || '')}</div><div class="sub">${v.channel ? '@' + esc(v.channel) + ' · ' : ''}${v.matches.length}곳 일치</div><div class="hits">${hits}</div></div></div>`;
 }
+
+// ---- Views / likes / comments ----
+const SVG = {
+  views: '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  likes: '<svg viewBox="0 0 24 24"><path d="M12 21s-7-4.4-9.3-8.6C1.1 9.3 3 5.5 6.6 5.5c2 0 3.3 1.1 4.1 2.3h2.6c.8-1.2 2.1-2.3 4.1-2.3 3.6 0 5.5 3.8 3.9 6.9C19 16.6 12 21 12 21z"/></svg>',
+  comments: '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/></svg>',
+  saves: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+};
+const LABEL = { views: '조회', likes: '좋아요', comments: '댓글', saves: '저장' };
+// 1234 -> 1.2천, 311086 -> 31.1만; strings ("1.8천", "36") are already display-ready.
+const num = (n) => (typeof n === 'string' ? n : n >= 1e8 ? +(n / 1e8).toFixed(1) + '억' : n >= 1e4 ? +(n / 1e4).toFixed(1) + '만' : n >= 1e3 ? +(n / 1e3).toFixed(1) + '천' : String(n));
+const statsHtml = (v) => ['views', 'likes', 'comments', 'saves']
+  .filter((k) => v[k] != null && v[k] !== '')
+  .map((k) => `<span title="${LABEL[k]}">${SVG[k]}${esc(num(v[k]))}</span>`).join('');
+
+// Fetch counts only for cards that scroll into view, a few at a time (they're page lookups, not credits).
+const statsQueue = [];
+let statsBusy = 0;
+function pumpStats() {
+  while (statsBusy < 4 && statsQueue.length) {
+    const [v, el] = statsQueue.shift();
+    statsBusy++;
+    fetch(`/api/stats?src=${v.src}&ref=${encodeURIComponent(v.ref)}`).then((r) => r.json()).then((st) => {
+      Object.assign(v, Object.fromEntries(Object.entries(st).filter(([, x]) => x != null)));
+      v.statsDone = true;
+      if (el.isConnected) el.innerHTML = statsHtml(v);
+    }).catch(() => {}).finally(() => { statsBusy--; pumpStats(); });
+  }
+}
+const statsIO = new IntersectionObserver((es) => es.forEach((e) => {
+  if (!e.isIntersecting) return;
+  statsIO.unobserve(e.target);
+  const v = window.shown?.[e.target.closest('.card').dataset.i];
+  if (v && !v.statsDone && ['yt', 'tt', 'pin'].includes(v.src)) { statsQueue.push([v, e.target]); pumpStats(); }
+}), { rootMargin: '300px' });
 
 function render() {
   $('#cnt').textContent = board.length || '';
@@ -281,6 +319,8 @@ function render() {
   io.disconnect();
   $('#grid').innerHTML = list.map(tab === 'search' && mode === 'scene' ? sceneCard : card).join('');
   document.querySelectorAll('#grid video').forEach((el) => io.observe(el));
+  statsIO.disconnect(); statsQueue.length = 0;
+  document.querySelectorAll('#grid .stats').forEach((el) => statsIO.observe(el));
   $('#empty').hidden = list.length > 0 || $('#status').textContent !== '';
   $('#empty').textContent = tab === 'search' && mode === 'scene'
     ? (lastQuery ? '분석해 둔 영상 중에 그 말이 나오는 게 없어요. [키워드]로 검색한 뒤 [결과 전부 분석해서 말 검색에 넣기]를 누르면 찾을 수 있는 영상이 늘어나요.' : '분석해 둔 영상에서 나온 말과 화면 속 글자로 찾아요.')
@@ -444,7 +484,7 @@ function open(v, at) {
     ? `<iframe class="${S.light ? 'light' : ''}" src="${esc(v.src === 'yt' ? S.embed(v.ref, '&autoplay=1') : S.embed(v.ref))}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>`
     : `<video src="${fileSrc(v)}" controls playsinline loop autoplay></video>`;
   $('#dTitle').textContent = v.title;
-  $('#dSub').innerHTML = [S && `<span class="pf">${pf(v.src)}</span>`, v.channel && esc('@' + v.channel), v.likes && esc('♥ ' + v.likes)].filter(Boolean).join(' · ');
+  $('#dSub').innerHTML = [S && `<span class="pf">${pf(v.src)}</span>`, v.channel && esc('@' + v.channel), statsHtml(v) && `<span class="stats" style="display:inline-flex;margin:0">${statsHtml(v)}</span>`].filter(Boolean).join(' · ');
   $('#saveBtn').hidden = !S || !!saved;
   $('#outLink').hidden = !S;
   $('#outLink').href = v.url || '#';

@@ -749,7 +749,9 @@ $('#q').oninput = () => { if (tab === 'board') render(); };
 // The phone/browser back button steps back inside the app (closes the video, leaves the scrapbook)
 // instead of leaving the site — which used to land on the old login page.
 let fromBack = false;
-if (history.state?.layer && history.state.layer !== 'guard') history.replaceState(null, ''); // reloaded with a video open: stale
+// Any layer marker on load is stale: a reload with a video open, or the app reopened by Chrome with its last state
+// (including our 'guard' — trusting that one meant no guard was pushed, so back closed the app straight away).
+if (history.state?.layer) history.replaceState(null, '');
 // Installed app: back on the home screen asks before closing. A "guard" entry sits on top of the first page; backing
 // past it shows the question. It's pushed on a tap because Chrome skips history entries added without user
 // activation — and a touch only counts once the finger lifts, so listen to click (not pointerdown), on every tap.

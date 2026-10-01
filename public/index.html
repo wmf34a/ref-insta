@@ -39,6 +39,19 @@
   .me .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
   .me a { color:var(--mute); font-size:12px; text-decoration:none; }
   .by { color:var(--mute); font-size:12px; }
+  .tag { margin-left:4px; font-size:10px; font-weight:700; padding:1px 5px; border-radius:6px; vertical-align:1px; }
+  .tag.free { background:#dcfce7; color:#15803d; }
+  .tag.lim { background:#fef3c7; color:#b45309; }
+  @media (prefers-color-scheme: dark) { .tag.free { background:#14361f; color:#4ade80; } .tag.lim { background:#3a2c0b; color:#fbbf24; } }
+  #notice { margin:10px 24px 0; padding:9px 12px; border-radius:10px; font-size:13px; line-height:1.5; background:color-mix(in srgb, #f5a623 12%, var(--card)); border:1px solid color-mix(in srgb, #f5a623 40%, transparent); }
+  #notice b { font-weight:700; }
+  #notice button { background:none; color:var(--accent); padding:0 0 0 6px; font-size:13px; }
+  .guidebtn { background:none; color:var(--mute); font-size:12px; padding:2px 4px; text-align:left; font-weight:500; }
+  #guide { width:min(560px, 94vw); height:auto; max-height:88vh; overflow:auto; padding:22px 24px; }
+  #guide h2 { margin:0 0 10px; font-size:18px; }
+  #guide h3 { margin:16px 0 6px; font-size:14px; }
+  #guide ul { margin:0; padding-left:18px; line-height:1.7; color:var(--fg); }
+  #guide .close { float:right; }
   .pcstate { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--mute); padding:0 4px; }
   .pcstate i { width:8px; height:8px; border-radius:50%; background:#9a9ea8; }
   .pcstate.on i { background:#22c55e; }
@@ -182,7 +195,9 @@
     .card .t { font-size:13px; }
   }
   @media (min-width:761px) { #creditMini { display:none; } }
-  #creditMini { color:var(--mute); font-size:12px; margin-top:8px; }
+  @media (max-width:760px) { #notice { margin:8px 12px 0; } }
+  #creditMini { color:var(--mute); font-size:12px; margin-top:8px; cursor:pointer; }
+  #creditMini::after { content:' · 이용 안내'; color:var(--accent); }
 </style>
 </head>
 <body>
@@ -192,6 +207,7 @@
   <button class="navbtn on" data-tab="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>레퍼런스 찾기</button>
   <button class="navbtn" data-tab="board"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>스크랩북 <span id="cnt"></span></button>
   <div class="navfoot">
+    <button class="guidebtn" id="guideBtn" type="button">ⓘ 이용 안내</button>
     <div class="credit" id="credit" hidden></div>
     <div class="pcstate" id="pcstate"><i></i><span>분석 PC 확인 중…</span></div>
     <div class="me" id="me" hidden></div>
@@ -218,6 +234,7 @@
     <div class="fsec"><span class="ftitle">형식</span><select id="fmt"><option value="">전체</option></select></div>
     <div class="row"><button class="ghost" type="button" id="fReset">필터 초기화</button><button type="button" id="fClose">닫기</button></div>
   </div>
+  <div id="notice" hidden></div>
   <div id="creditMini" hidden></div>
   <div id="offline" hidden>분석 PC가 꺼져 있어요. 검색·스크랩북은 그대로 되고, 타임라인 분석과 영상 속 말 검색은 PC에서 ref 를 켜면 돼요.</div>
   <div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>결과 전부 분석해서 말 검색에 넣기</button></div>
@@ -226,6 +243,33 @@
 </div>
 </div>
 <div id="drop" hidden>여기에 놓으면 스크랩북에 올라가요</div>
+
+<dialog id="guide">
+  <button class="ghost close" id="guideClose" type="button">닫기</button>
+  <h2>이용 안내</h2>
+  <p style="color:var(--mute);margin:0">돈이 결제되는 기능은 없어요. 대신 몇몇 검색은 하루에 쓸 수 있는 양이 정해져 있어요.</p>
+  <h3>마음껏 써도 되는 것 (무료)</h3>
+  <ul>
+    <li><b>유튜브 쇼츠 검색</b> (하루 100번까지)</li>
+    <li>영상 열어보기, 조회수·좋아요 보기, 스크랩·메모</li>
+    <li>이미 분석된 영상의 타임라인, [영상 속 말] 검색</li>
+    <li>3일 안에 누군가 했던 검색 (저장된 결과를 보여줘요)</li>
+  </ul>
+  <h3>하루 한도가 있는 것</h3>
+  <ul>
+    <li><b>인스타·틱톡·핀터레스트·스레드 검색</b>: 새 검색 한 번에 2, [전체]는 8을 써요</li>
+    <li>하루 검색량은 모두가 똑같이 나눠 써요. 왼쪽 아래에서 남은 양을 볼 수 있어요</li>
+    <li>필터(날짜·주제·형식)를 바꾸거나 [비슷한 영상] 탭을 열 때도 새 검색이에요</li>
+    <li>다 쓰면 결제되는 게 아니라 새 검색만 막히고, 다음 날 다시 채워져요</li>
+  </ul>
+  <h3>부탁드려요</h3>
+  <ul>
+    <li>검색은 <b>유튜브 쇼츠</b>부터 해 주세요</li>
+    <li>스크랩북은 함께 써요. 남이 저장한 건 지우지 말아 주세요</li>
+    <li>받은 영상·썸네일은 참고용으로만 쓰고 다른 곳에 올리지 말아 주세요</li>
+    <li>처음 보는 영상의 타임라인 분석은 운영 PC가 켜져 있을 때만 돼요</li>
+  </ul>
+</dialog>
 
 <dialog id="dlg">
   <div class="detail">
@@ -298,7 +342,7 @@ const hover = matchMedia('(hover: hover)').matches; // no hover previews/prefetc
 const fileSrc = (v) => '/videos/' + encodeURIComponent(v.file);
 
 $('#srcs').insertAdjacentHTML('beforeend', [['all', '전체'], ...Object.entries(SRC).map(([k, v]) => [k, v.name])]
-  .map(([k, n]) => `<button class="chip" data-src="${k}">${k === 'all' ? n : `<span class="pf">${ICON[k]}${n}</span>`}</button>`).join(' '));
+  .map(([k, n]) => `<button class="chip" data-src="${k}" title="${k === 'yt' ? '무료 검색' : '검색할 때마다 하루 검색량을 써요'}">${k === 'all' ? n : `<span class="pf">${ICON[k]}${n}</span>`}${k === 'yt' ? '<span class="tag free">무료</span>' : '<span class="tag lim">한도</span>'}</button>`).join(' '));
 
 // Uploaded files autoplay (muted) only while on screen, so a long grid stays light.
 const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting ? e.target.play().catch(() => {}) : e.target.pause()), { rootMargin: '200px' });
@@ -363,7 +407,22 @@ const statsIO = new IntersectionObserver((es) => es.forEach((e) => {
   if (v && !v.statsDone && ['yt', 'tt', 'pin'].includes(v.src)) { statsQueue.push([v, e.target]); pumpStats(); }
 }), { rootMargin: '300px' });
 
+// Shown before searching a platform that uses the daily allowance, so nobody spends it by surprise.
+let creditInfo = null;
+function renderNotice() {
+  const show = tab === 'search' && mode === 'web' && src !== 'yt';
+  $('#notice').hidden = !show;
+  if (!show) return;
+  const cost = src === 'all' ? creditInfo?.costAll ?? 8 : creditInfo?.costOne ?? 2;
+  const left = creditInfo ? (creditInfo.share != null ? Math.min(creditInfo.mineLeft, creditInfo.left) : creditInfo.left) : null;
+  $('#notice').innerHTML = `<b>${src === 'all' ? '[전체]' : SRC[src].name} 검색은 하루 검색량을 써요.</b> 새 검색 한 번에 <b>${cost}</b>`
+    + (left != null ? `, 오늘 내 남은 양은 <b>${left}</b>이에요.` : '이에요.')
+    + ` 결제되지는 않고, 다 쓰면 다음 날 다시 채워져요. 유튜브 쇼츠는 무료예요.<button type="button" id="noticeMore">자세히</button>`;
+  $('#noticeMore').onclick = () => $('#guide').showModal();
+}
+
 function render() {
+  renderNotice();
   $('#cnt').textContent = board.length || '';
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#upBtn').hidden = tab !== 'board';
@@ -466,6 +525,8 @@ async function loadCredits() {
   try {
     const c = await (await fetch('/api/credits')).json();
     if (c.error || c.left == null) return;
+    creditInfo = c;
+    renderNotice();
     const times = (cost) => Math.floor((c.share != null ? Math.min(c.mineLeft, c.left) : c.left) / cost);
     const reset = new Date(c.resetAt);
     const resetTxt = `${reset.getMonth() + 1}월 ${reset.getDate()}일`;
@@ -648,6 +709,11 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => {
 });
 $('#from').onchange = $('#to').onchange = () => { if (lastQuery && $('#from').value) search(lastQuery); };
 $('#batchBtn').onclick = analyzeAll;
+$('#guideBtn').onclick = $('#creditMini').onclick = () => $('#guide').showModal(); // phones: tap the allowance line
+$('#guideClose').onclick = () => $('#guide').close();
+$('#guide').onclick = (e) => { if (e.target === $('#guide')) $('#guide').close(); };
+// First visit on this browser: show the guide once.
+try { if (!localStorage.getItem('ref.guideSeen')) { localStorage.setItem('ref.guideSeen', '1'); setTimeout(() => $('#guide').showModal(), 400); } } catch {}
 $('#filterBtn').onclick = () => { $('#filterPanel').hidden = !$('#filterPanel').hidden; render(); };
 $('#fClose').onclick = () => { $('#filterPanel').hidden = true; render(); };
 $('#fReset').onclick = () => {

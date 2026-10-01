@@ -88,10 +88,20 @@ const loginPage = (msg = '운영진 계정으로 들어와 주세요.', ua = '')
     return page('ref 로그인', `<h1>re<span>f</span></h1><p>앱 안의 브라우저에서는 구글 로그인이 막혀 있어요.<br>메뉴에서 <b>외부 브라우저로 열기</b>를 눌러 주세요.</p>`);
   // replace(): the login page leaves no history entry, so "back" from the app can't land on it.
   // On load / when restored from the back-forward cache, already signed in -> straight into the app.
-  return page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login" onclick="location.replace(this.href);return false">${GOOGLE_G}Google 계정으로 로그인</a>
+  // Google sign-in opens in a popup/new tab, so Google's pages never enter this tab's history and "back" from the app
+  // can't land on them. Installed app (standalone) or blocked popup: same-tab sign-in, leaving no entry for this page.
+  return page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login" id="login">${GOOGLE_G}Google 계정으로 로그인</a>
     <script>
       const check = () => fetch('/api/me', { cache: 'no-store', credentials: 'same-origin' }).then((r) => { if (r.ok) location.replace('/'); }).catch(() => {});
       check(); addEventListener('pageshow', (e) => { if (e.persisted) check(); });
+      addEventListener('message', (e) => { if (e.origin === location.origin && e.data === 'ref-login') check(); });
+      addEventListener('focus', check); // the popup closed and we're back
+      document.getElementById('login').onclick = (e) => {
+        e.preventDefault();
+        const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+        const w = !standalone && window.open('/auth/login?popup=1', 'ref-login', 'width=480,height=680');
+        if (!w) location.replace('/auth/login');
+      };
     </script>`);
 };
 
@@ -102,7 +112,8 @@ async function authRoutes(req, env, url) {
   const redirect = `${url.origin}/auth/callback`;
   const secure = 'HttpOnly; Secure; SameSite=Lax; Path=/';
   if (p === '/auth/login') {
-    const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+    // popup=1: remember to finish by closing the popup instead of loading the app in it.
+    const state = b64url(crypto.getRandomValues(new Uint8Array(16))) + (url.searchParams.get('popup') ? '.p' : '');
     const to = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
       client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account',
     });
@@ -130,6 +141,11 @@ async function authRoutes(req, env, url) {
       await telegram(env, `🔔 ref 새 로그인\n${c.name || ''} (${email})\n모르는 사람이면 관리 화면에서 차단하세요: ${url.origin}/#admin`).catch(() => {});
     }
     const session = await makeSession(env, { email, name: c.name || email, picture: c.picture || '' });
+    const cookies = [['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]];
+    if (state.endsWith('.p'))
+      // Popup: tell the opener, close. If this wasn't really a popup (window.close is ignored), go to the app here.
+      return new Response(`<!doctype html><meta charset="utf-8"><script>try{opener&&opener.postMessage('ref-login',location.origin)}catch(e){};window.close();setTimeout(function(){location.replace('/')},400)</script>`,
+        { headers: [['content-type', 'text/html; charset=utf-8'], ['cache-control', 'no-store'], ...cookies] });
     return new Response(null, { status: 302, headers: [['location', '/'], ['cache-control', 'no-store'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
   }
   if (p === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': `ref_session=; Max-Age=0; ${secure}` } });

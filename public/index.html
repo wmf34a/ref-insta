@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ref</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2f5bff">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="icon" href="/icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ref">
 <style>
   :root { --bg:#f5f6f8; --card:#fff; --fg:#17181c; --mute:#7a7d86; --line:#e6e8ec; --accent:#2f5bff; --soft:#eef2ff; color-scheme: light dark; }
   @media (prefers-color-scheme: dark) { :root { --bg:#0f1012; --card:#18191c; --fg:#eceef2; --mute:#9a9ea8; --line:#2a2c31; --soft:#1d2440; } }
@@ -51,7 +57,17 @@
   #guide h2 { margin:0 0 10px; font-size:18px; }
   #guide h3 { margin:16px 0 6px; font-size:14px; }
   #guide ul { margin:0; padding-left:18px; line-height:1.7; color:var(--fg); }
-  #guide .close, #admin .close { float:right; }
+  #guide .close, #admin .close, #install .close { float:right; }
+  #install { width:min(460px, 94vw); height:auto; max-height:90vh; overflow:auto; padding:22px 24px; }
+  .ihead { display:flex; gap:12px; align-items:center; margin:4px 0 14px; }
+  .ihead img { width:52px; height:52px; border-radius:12px; }
+  .ihead h2 { margin:0; font-size:17px; } .ihead p { margin:2px 0 0; color:var(--mute); font-size:13px; }
+  .steps { list-style:none; margin:0; padding:0; display:grid; gap:10px; }
+  .steps li { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--line); border-radius:12px; font-size:14px; line-height:1.5; }
+  .steps .n { flex:none; width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; font-weight:700; display:grid; place-items:center; margin-top:1px; }
+  .steps svg { width:18px; height:18px; vertical-align:-4px; fill:none; stroke:currentColor; stroke-width:2; }
+  .itabs { display:flex; gap:6px; margin:4px 0 10px; }
+  #installBody .warn { padding:10px 12px; border-radius:10px; background:color-mix(in srgb, #f5a623 14%, var(--card)); border:1px solid color-mix(in srgb, #f5a623 40%, transparent); font-size:13px; margin-bottom:10px; }
   #admin { width:min(640px, 94vw); height:auto; max-height:88vh; overflow:auto; padding:22px 24px; }
   #admin h2 { margin:0 0 10px; font-size:18px; } #admin h3 { margin:18px 0 6px; font-size:14px; }
   .urow { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
@@ -213,6 +229,7 @@
   <button class="navbtn on" data-tab="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>레퍼런스 찾기</button>
   <button class="navbtn" data-tab="board"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>스크랩북 <span id="cnt"></span></button>
   <button class="navbtn" id="guideNav" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>이용 안내</button>
+  <button class="navbtn" id="installNav" type="button" hidden><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 8v6M9 11h6"/></svg>홈 화면에 추가</button>
   <button class="navbtn" id="adminNav" type="button" hidden><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>관리</button>
   <div class="navfoot">
     <div class="credit" id="credit" hidden></div>
@@ -269,6 +286,9 @@
     <li>필터(날짜·주제·형식)를 바꾸거나 [비슷한 영상] 탭을 열 때도 새 검색이에요</li>
     <li>다 쓰면 결제되는 게 아니라 새 검색만 막히고, 다음 날 다시 채워져요</li>
   </ul>
+  <h3>앱처럼 쓰기</h3>
+  <ul><li>왼쪽 메뉴(폰은 아래 탭)의 <b>홈 화면에 추가</b>를 누르면 기기별 방법이 나와요. 아이폰은 Safari, 안드로이드는 크롬에서 할 수 있어요</li>
+  <li>카카오톡으로 받은 링크는 카톡 안 브라우저라 <b>구글 로그인과 홈 화면 추가가 안 돼요</b>. ⋯ → 다른 브라우저로 열기를 눌러 주세요</li></ul>
   <h3>부탁드려요</h3>
   <ul>
     <li>검색은 <b>유튜브 쇼츠</b>부터 해 주세요</li>
@@ -276,6 +296,12 @@
     <li>받은 영상·썸네일은 참고용으로만 쓰고 다른 곳에 올리지 말아 주세요</li>
     <li>처음 보는 영상의 타임라인 분석은 운영 PC가 켜져 있을 때만 돼요</li>
   </ul>
+</dialog>
+
+<dialog id="install">
+  <button class="ghost close" id="installClose" type="button">닫기</button>
+  <div class="ihead"><img src="/icons/icon-192.png" alt=""><div><h2>ref를 홈 화면에 추가하기</h2><p>앱처럼 아이콘을 눌러 바로 열 수 있어요. 로그인도 유지돼요.</p></div></div>
+  <div id="installBody"></div>
 </dialog>
 
 <dialog id="admin">
@@ -675,7 +701,7 @@ function open(v, at) {
   delete $('#simGrid').dataset.for;
   $('#simGrid').innerHTML = '';
   showPane('scenes');
-  if (!$('#dlg').open) $('#dlg').showModal();
+  if (!$('#dlg').open) { $('#dlg').showModal(); history.pushState({ layer: 'detail' }, ''); }
   loadAnalysis(current, seq, at);
 }
 
@@ -691,7 +717,19 @@ async function upload(files) {
 
 $('#f').onsubmit = (e) => { e.preventDefault(); tab === 'search' ? search($('#q').value) : render(); };
 $('#q').oninput = () => { if (tab === 'board') render(); };
+// The phone/browser back button steps back inside the app (closes the video, leaves the scrapbook)
+// instead of leaving the site — which used to land on the old login page.
+let fromBack = false;
+if (history.state?.layer) history.replaceState(null, ''); // reloaded with a video open: that entry is stale now
+addEventListener('popstate', () => {
+  fromBack = true;
+  if ($('#dlg').open) $('#dlg').close();
+  else if (tab === 'board' && history.state?.layer !== 'board') { tab = 'search'; $('#q').value = lastQuery; render(); }
+  fromBack = false;
+});
 document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
+  if (b.dataset.tab === 'board' && tab !== 'board') history.pushState({ layer: 'board' }, '');
+  if (b.dataset.tab === 'search' && history.state?.layer === 'board') { history.back(); return; } // same as pressing back
   tab = b.dataset.tab; activeTag = null;
   if (tab === 'board') batchSeq++;
   $('#q').value = tab === 'search' ? lastQuery : '';
@@ -790,7 +828,10 @@ $('#del').onclick = async () => {
   loadBoard();
 };
 $('#file').onchange = (e) => { upload(e.target.files); e.target.value = ''; };
-$('#dlg').onclose = () => { $('#player').innerHTML = ''; current = null; openSeq++; };
+$('#dlg').onclose = () => {
+  $('#player').innerHTML = ''; current = null; openSeq++;
+  if (!fromBack && history.state?.layer === 'detail') history.back(); // closed with ✕/Esc: drop the history entry we added
+};
 $('#dlg').onclick = (e) => { if (e.target === $('#dlg')) $('#dlg').close(); };
 
 let depth = 0;
@@ -832,6 +873,46 @@ $('#userList').onclick = async (e) => {
   loadAdmin();
 };
 $('#adminNav').onclick = () => { $('#admin').showModal(); loadAdmin(); };
+
+// ---- 홈 화면에 추가 (same approach as 육진대 map: native prompt on Android/Chrome, step-by-step for the rest) ----
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+let installPrompt = null;
+addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+addEventListener('appinstalled', () => { installPrompt = null; $('#installNav').hidden = true; $('#install').close(); });
+const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+$('#installNav').hidden = standalone;
+const ua = navigator.userAgent;
+const IC = {
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v8h14v-8"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>',
+  dots: '<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>',
+};
+const steps = (list) => `<ol class="steps">${list.map((t, i) => `<li><span class="n">${i + 1}</span><span>${t}</span></li>`).join('')}</ol>`;
+const GUIDES = {
+  ios: steps([`화면 아래(또는 위) 주소창 옆 <b>공유 버튼</b> ${IC.share} 을 눌러요`, `목록을 위로 올려 <b>홈 화면에 추가</b> ${IC.plus} 를 눌러요`, `오른쪽 위 <b>추가</b>를 누르면 홈 화면에 ref 아이콘이 생겨요`])
+    + '<p style="color:var(--mute);font-size:13px"><b>Safari</b>에서 하는 게 가장 확실해요. 크롬도 공유 버튼에 홈 화면에 추가가 있지만, 카카오톡·네이버 앱 안에서는 안 돼요.</p>',
+  android: steps([`크롬 오른쪽 위 <b>점 세 개 메뉴</b> ${IC.dots} 를 눌러요`, `<b>홈 화면에 추가</b> 또는 <b>앱 설치</b>를 눌러요`, `<b>설치</b>(추가)를 누르면 홈 화면에 ref 아이콘이 생겨요`])
+    + '<p style="color:var(--mute);font-size:13px">삼성 인터넷은 아래쪽 <b>≡ 메뉴 → 현재 페이지 추가 → 홈 화면</b>이에요.</p>',
+  pc: steps([`주소창 오른쪽 끝의 <b>설치 아이콘</b> ${IC.plus} 을 누르거나`, `크롬 메뉴 ${IC.dots} → <b>저장 및 공유 → 앱으로 설치</b>(또는 바로가기 만들기)를 눌러요`]),
+};
+function showInstall() {
+  const kakao = /KAKAOTALK/i.test(ua), inapp = kakao || /NAVER\(|Instagram|FBAN|FBAV|Line\//i.test(ua);
+  const os = /iphone|ipad|ipod/i.test(ua) ? 'ios' : /android/i.test(ua) ? 'android' : 'pc';
+  let html = '';
+  if (inapp)
+    html += `<div class="warn">지금은 ${kakao ? '카카오톡' : '앱'} 안의 브라우저라 홈 화면에 추가할 수 없어요. ${kakao ? '오른쪽 아래 <b>⋯</b> → <b>다른 브라우저로 열기</b>' : '메뉴에서 <b>외부 브라우저로 열기</b>'}를 눌러 ${os === 'ios' ? 'Safari' : '크롬'}로 연 다음 다시 눌러 주세요.</div>`;
+  if (installPrompt && !inapp) html += `<button id="installNow" style="width:100%;padding:12px;margin-bottom:12px">지금 바로 추가하기</button><p style="color:var(--mute);font-size:13px;margin:0 0 8px">버튼이 안 되면 아래 순서대로 해 주세요.</p>`;
+  html += `<div class="itabs">${[['ios', '아이폰'], ['android', '안드로이드'], ['pc', 'PC']].map(([k, n]) => `<button class="chip ${k === os ? 'on' : ''}" data-os="${k}">${n}</button>`).join('')}</div><div id="osGuide">${GUIDES[os]}</div>`;
+  $('#installBody').innerHTML = html;
+  $('#installBody').onclick = async (e) => {
+    const t = e.target.closest('[data-os]');
+    if (t) { document.querySelectorAll('[data-os]').forEach((b) => b.classList.toggle('on', b === t)); $('#osGuide').innerHTML = GUIDES[t.dataset.os]; }
+    if (e.target.id === 'installNow' && installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $('#install').close(); }
+  };
+  $('#install').showModal();
+}
+$('#installNav').onclick = showInstall;
+$('#installClose').onclick = () => $('#install').close();
 $('#adminClose').onclick = () => $('#admin').close();
 
 fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((u) => {

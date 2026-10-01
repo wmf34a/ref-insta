@@ -74,10 +74,20 @@ const page = (title, body) =>
 h1{margin:0 0 6px;font-size:26px;letter-spacing:-.6px}h1 span{color:#2f5bff}p{color:#7a7d86;margin:0 0 22px}
 a.g{display:flex;gap:10px;align-items:center;justify-content:center;padding:11px 16px;border:1px solid #dadce0;border-radius:12px;background:#fff;color:#1f1f1f;text-decoration:none;font-weight:600}
 a.s{display:inline-block;margin-top:14px;color:#7a7d86;font-size:13px}</style><div class="box">${body}</div>`,
-    { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+    // no-store: going "back" to this page must ask the server again (signed in → the app), not show a stale copy.
+    { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
 const GOOGLE_G = '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
-const loginPage = (msg = '운영진 계정으로 들어와 주세요.') =>
-  page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login">${GOOGLE_G}Google 계정으로 로그인</a>`);
+// Google refuses sign-in inside app browsers (카카오톡 etc. → "disallowed_useragent"), so say how to get out first.
+const loginPage = (msg = '운영진 계정으로 들어와 주세요.', ua = '') => {
+  if (/KAKAOTALK/i.test(ua))
+    return page('ref 로그인', `<h1>re<span>f</span></h1><p>카카오톡 안에서는 구글 로그인이 막혀 있어요.<br>아래 버튼으로 바깥 브라우저에서 열어 주세요.</p>
+      <a class="g" href="#" id="ext">다른 브라우저로 열기</a>
+      <p style="font-size:13px;margin-top:14px">안 되면 오른쪽 아래 ⋯ → <b>다른 브라우저로 열기</b>를 눌러 주세요.</p>
+      <script>document.getElementById('ext').href='kakaotalk://web/openExternal?url='+encodeURIComponent(location.origin)</script>`);
+  if (/NAVER\(|Instagram|FBAN|FBAV|Line\//i.test(ua))
+    return page('ref 로그인', `<h1>re<span>f</span></h1><p>앱 안의 브라우저에서는 구글 로그인이 막혀 있어요.<br>메뉴에서 <b>외부 브라우저로 열기</b>를 눌러 주세요.</p>`);
+  return page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login">${GOOGLE_G}Google 계정으로 로그인</a>`);
+};
 
 // /auth/* routes. Returns a Response, or null if the path isn't one of them.
 async function authRoutes(req, env, url) {
@@ -190,12 +200,14 @@ export default {
       return json({ error: 'bad path' }, 400);
     }
 
+    // Install bits are fetched by the browser without cookies (manifest, icons, service worker): serve them to anyone.
+    if (m === 'GET' && (p === '/manifest.json' || p === '/sw.js' || /^\/icons\/[\w-]+\.png$/.test(p))) return env.ASSETS.fetch(req);
     const authResp = await authRoutes(req, env, url);
     if (authResp) return authResp;
     const user = await currentUser(req, env);
     if (!user) {
       if (!googleOn(env)) return new Response('로그인이 필요해요', { status: 401, headers: { 'www-authenticate': 'Basic realm="ref", charset="UTF-8"' } });
-      return p.startsWith('/api/') ? json({ error: '로그인이 필요해요' }, 401) : loginPage();
+      return p.startsWith('/api/') ? json({ error: '로그인이 필요해요' }, 401) : loginPage(undefined, req.headers.get('user-agent') || '');
     }
     const people = googleOn(env) ? await peopleCount(env) : 1;
     const who = googleOn(env) ? user.email : undefined;
@@ -329,7 +341,10 @@ export default {
       // Needs the analysis PC
       if (p.startsWith('/cache/') || p.startsWith('/videos/')) return proxy(req, env, p + url.search);
       if (p.startsWith('/api/')) return json({ error: 'not found' }, 404);
-      return env.ASSETS.fetch(req);
+      const asset = await env.ASSETS.fetch(req);
+      const res = new Response(asset.body, asset);
+      if ((res.headers.get('content-type') || '').includes('text/html')) res.headers.set('cache-control', 'no-store');
+      return res;
     } catch (e) {
       return json({ error: String(e.message || e) }, 500);
     }

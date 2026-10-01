@@ -1,0 +1,17 @@
+{
+  "name": "ref — 레퍼런스 찾기",
+  "short_name": "ref",
+  "description": "쇼츠·릴스·틱톡 레퍼런스를 한 번에 찾고, 영상 속 말과 장면까지 보는 도구",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f6f8",
+  "theme_color": "#2f5bff",
+  "lang": "ko",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

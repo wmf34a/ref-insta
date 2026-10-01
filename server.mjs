@@ -15,7 +15,7 @@ const VIDEO_DIR = path.join(ROOT, 'videos');
 const DATA = path.join(ROOT, 'data.json');
 const PORT = Number(process.env.PORT) || 5173;
 const MIME = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.m4v': 'video/mp4' };
-const STATIC_MIME = { ...MIME, '.jpg': 'image/jpeg' };
+const STATIC_MIME = { ...MIME, '.jpg': 'image/jpeg', '.png': 'image/png', '.json': 'application/json', '.js': 'text/javascript' };
 
 fs.mkdirSync(VIDEO_DIR, { recursive: true });
 
@@ -125,6 +125,17 @@ function hallucinated(t) {
   return chars.length > 20 && new Set(chars).size / chars.length < 0.15;
 }
 
+// yt-dlp's English errors -> what the person can actually do about it.
+function downloadError(msg, link) {
+  const site = /instagram/.test(link) ? '인스타그램' : /tiktok/.test(link) ? '틱톡' : /threads/.test(link) ? '스레드' : '이 사이트';
+  if (/timed out|Connection|getaddrinfo|Network is unreachable|Unable to download webpage/i.test(msg))
+    return `분석 PC에서 ${site}에 접속할 수 없어요. 회사 네트워크처럼 ${site}을 막는 곳일 수 있어요. 집 PC를 분석 PC로 켜면 될 수 있어요.`;
+  if (/login|log in|cookies|rate.?limit|empty media|not available|private/i.test(msg))
+    return `${site}이 로그인을 요구해서 이 영상은 받을 수 없어요.`;
+  if (/no video|There is no video|Unsupported URL|image/i.test(msg)) return '사진 게시물이라 분석할 영상이 없어요.';
+  return `영상을 받지 못했어요. (${msg.slice(0, 160)})`;
+}
+
 // key: cache folder name; link: page to download with yt-dlp, or file: a local upload; ytId: YouTube id for captions;
 // meta: title/src/url etc. kept with the result so the scene & script search can show and open it.
 async function analyze({ key, link, file, ytId, meta = {} }) {
@@ -141,7 +152,7 @@ async function analyze({ key, link, file, ytId, meta = {} }) {
     try {
       await run('yt-dlp', ['-q', '--no-playlist', '-f', 'b[ext=mp4][height<=720]/bv*[height<=720]+ba/b', '--merge-output-format', 'mp4', '-o', video, link]);
     } catch (e) {
-      throw new Error('영상을 받지 못했어요. 이미지 게시물이거나 접속이 막힌 사이트일 수 있어요. (' + e.message + ')');
+      throw new Error(downloadError(e.message, link));
     }
   }
 
@@ -329,6 +340,7 @@ http
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
         return fs.createReadStream(path.join(ROOT, 'public', 'index.html')).pipe(res);
       }
+      if (req.method === 'GET' && (p === '/manifest.json' || p === '/sw.js' || p.startsWith('/icons/'))) return serveFile(req, res, path.join(ROOT, 'public'), p.slice(1));
       if (req.method === 'GET' && p.startsWith('/videos/')) return serveFile(req, res, VIDEO_DIR, decodeURIComponent(p.slice(8)));
       if (req.method === 'GET' && p.startsWith('/cache/')) return serveFile(req, res, CACHE_DIR, decodeURIComponent(p.slice(7)));
       if (req.method === 'GET' && p === '/api/videos') return json(res, 200, load());

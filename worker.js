@@ -35,7 +35,8 @@ async function makeSession(env, user) {
 async function readSession(env, req) {
   const [body, sig] = (cookie(req, 'ref_session') || '').split('.');
   if (!body || !sig) return null;
-  if (!(await crypto.subtle.verify('HMAC', await hmacKey(env), fromB64url(sig), enc.encode(body)))) return null;
+  const ok = await (async () => crypto.subtle.verify('HMAC', await hmacKey(env), fromB64url(sig), enc.encode(body)))().catch(() => false);
+  if (!ok) return null;
   const s = JSON.parse(new TextDecoder().decode(fromB64url(body)));
   // Re-check on every request, so removing/blocking an email locks that person out right away.
   if (!(s.exp > Date.now() && mayEnter(env, s.email))) return null;
@@ -94,8 +95,13 @@ const loginPage = (msg = '운영진 계정으로 들어와 주세요.', ua = '')
     <script>
       const check = () => fetch('/api/me', { cache: 'no-store', credentials: 'same-origin' }).then((r) => { if (r.ok) location.replace('/'); }).catch(() => {});
       check(); addEventListener('pageshow', (e) => { if (e.persisted) check(); });
+      // The sign-in tab can finish in several ways (Android Chrome opens it as a tab and may not deliver
+      // postMessage/focus), so listen for all of them and also re-check every few seconds while visible.
       addEventListener('message', (e) => { if (e.origin === location.origin && e.data === 'ref-login') check(); });
-      addEventListener('focus', check); // the popup closed and we're back
+      addEventListener('storage', (e) => { if (e.key === 'ref-login') check(); });
+      addEventListener('focus', check);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+      setInterval(() => { if (!document.hidden) check(); }, 3000);
       document.getElementById('login').onclick = (e) => {
         e.preventDefault();
         const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -144,9 +150,27 @@ async function authRoutes(req, env, url) {
     const cookies = [['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]];
     if (state.endsWith('.p'))
       // Popup: tell the opener, close. If this wasn't really a popup (window.close is ignored), go to the app here.
-      return new Response(`<!doctype html><meta charset="utf-8"><script>try{opener&&opener.postMessage('ref-login',location.origin)}catch(e){};window.close();setTimeout(function(){location.replace('/')},400)</script>`,
+      return new Response(`<!doctype html><meta charset="utf-8"><script>try{localStorage.setItem('ref-login',Date.now())}catch(e){};try{opener&&opener.postMessage('ref-login',location.origin)}catch(e){};window.close();setTimeout(function(){location.replace('/')},400)</script>`,
         { headers: [['content-type', 'text/html; charset=utf-8'], ['cache-control', 'no-store'], ...cookies] });
     return new Response(null, { status: 302, headers: [['location', '/'], ['cache-control', 'no-store'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
+  }
+  if (p === '/auth/check') {
+    // "Am I signed in, and until when?" — for diagnosing "it keeps asking me to log in" on a phone.
+    const raw = cookie(req, 'ref_session');
+    let msg;
+    if (!raw) msg = '이 브라우저에는 로그인 기록(쿠키)이 없어요. 로그인한 뒤에도 이렇게 나오면 브라우저가 쿠키를 저장하지 않는 거예요 (시크릿 창, 쿠키 차단 설정, 카카오톡 안 브라우저 등).';
+    else {
+      const [body, sig] = raw.split('.');
+      const okSig = await (async () => body && sig && crypto.subtle.verify('HMAC', await hmacKey(env), fromB64url(sig), enc.encode(body)))().catch(() => false);
+      const s = okSig ? JSON.parse(new TextDecoder().decode(fromB64url(body))) : null;
+      const blocked = s && (await env.DB.prepare('SELECT blocked FROM users WHERE email = ?').bind(s.email).first())?.blocked;
+      const until = s && new Date(s.exp + 9 * 3600e3).toISOString().slice(0, 16).replace('T', ' ');
+      msg = !okSig ? '로그인 기록이 있지만 서버 설정이 바뀌어 더 이상 쓸 수 없어요. 다시 로그인해 주세요.'
+        : s.exp < Date.now() ? `로그인이 만료됐어요 (${until}). 다시 로그인해 주세요.`
+        : blocked ? '이 계정은 이용이 중지됐어요.'
+        : `${s.email} 으로 로그인돼 있어요. ${until} 까지 유지돼요.`;
+    }
+    return page('로그인 상태', `<h1>re<span>f</span></h1><p>${msg.replace(/[<>&]/g, '')}</p><a class="g" href="/">앱으로 가기</a>`);
   }
   if (p === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': `ref_session=; Max-Age=0; ${secure}` } });
   return null;

@@ -283,7 +283,7 @@ const FORMATS = ['언박싱', '리뷰', '비교', '꿀팁', '튜토리얼', '비
 $('#topic').insertAdjacentHTML('beforeend', TOPICS.map((c) => `<option>${c}</option>`).join(''));
 $('#fmt').insertAdjacentHTML('beforeend', FORMATS.map((c) => `<option>${c}</option>`).join(''));
 const extraWords = () => [$('#topic').value, $('#fmt').value].filter(Boolean).join(' ').replace(/·/g, ' ');
-let mode = 'web', src = 'all', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
+let mode = 'web', src = 'yt', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
 
 const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
 const srcName = () => (src === 'all' ? '전체' : SRC[src].name);
@@ -416,7 +416,7 @@ async function search(q) {
     const failed = (r.headers.get('x-failed') || '').split(',').filter(Boolean).map((k) => SRC[k].name);
     const noDate = period && src === 'all' ? ' · 핀터레스트는 날짜를 알 수 없어서 기간 필터에서 빠져요' : '';
     loadCredits();
-    $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개` + (failed.length ? ` · ${failed.join(', ')}은(는) 못 불러왔어요 (다시 검색하면 재시도)` : '') + noDate;
+    $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개 · 조회수 많은 순` + (failed.length ? ` · ${failed.join(', ')}은(는) 못 불러왔어요 (다시 검색하면 재시도)` : '') + noDate;
   } catch (e) {
     $('#status').textContent = '검색 실패: ' + e.message;
   }
@@ -466,12 +466,13 @@ async function loadCredits() {
     $('#credit').hidden = false;
     $('#credit').innerHTML = `<div class="h"><span>오늘 검색 가능량</span><span><span class="big">${c.left}</span> / ${c.budget}</span></div>
       <div class="bar"><i style="width:${c.budget ? Math.round((c.left / c.budget) * 100) : 0}%"></i></div>
-      <div>전체 검색 ${times(c.costAll)}번 · 플랫폼 하나 ${times(c.costOne)}번 더 할 수 있어요</div>
+      <div>${c.free?.includes('yt') ? '유튜브 쇼츠는 무료 · ' : ''}전체 검색 ${times(c.costAll)}번 · 다른 플랫폼 하나 ${times(c.costOne)}번 더 할 수 있어요</div>
       <details><summary>어떻게 정해지나요?</summary><p>이번 달 남은 크레딧 ${c.remaining}개를 다시 채워지는 날(${resetTxt})까지 ${c.daysLeft}일로 나눠서, 하루에 ${c.budget}크레딧씩 써요.<br>
       새 검색은 플랫폼 하나에 ${c.costOne}, 전체 검색은 ${c.costAll}크레딧이 들고, 3일 안에 했던 검색은 무료예요.<br>
+      유튜브 쇼츠는 분석 PC가 켜져 있으면 크레딧 없이 검색돼요.<br>
       다 쓰면 결제되는 게 아니라 새 검색만 막히고, 내일 다시 채워져요.</p></details>`;
     $('#creditMini').hidden = false;
-    $('#creditMini').textContent = `오늘 남은 검색량 ${c.left}/${c.budget}크레딧 · 전체 검색 ${times(c.costAll)}번, 플랫폼 하나 ${times(c.costOne)}번`;
+    $('#creditMini').textContent = `오늘 남은 검색량 ${c.left}/${c.budget}크레딧 · ${c.free?.includes('yt') ? '쇼츠 무료, ' : ''}전체 ${times(c.costAll)}번, 다른 플랫폼 ${times(c.costOne)}번`;
   } catch {}
 }
 

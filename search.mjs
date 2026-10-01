@@ -92,14 +92,36 @@ export async function searchSource(webSearch, src, q, qdr) {
     })
     .filter((v) => v && !seen.has(v.ref) && !seen.has(v.title) && seen.add(v.ref).add(v.title));
   await pool(list, 8, async (v) => (v.date = await postTime(v)));
-  return list;
+  // Counts for ranking: TikTok/Pinterest need a page lookup (free, no credits); Instagram's come from the snippet.
+  await pool(list.filter((v) => v.src === 'tt' || v.src === 'pin'), 5, async (v) => {
+    const st = await fetchStats(v.src, v.ref).catch(() => ({}));
+    for (const [k, x] of Object.entries(st)) if (x != null) v[k] = x;
+    v.statsDone = true;
+  });
+  return list.sort(byPopular);
+}
+
+// ---- Ranking: most viewed first, then most shared, then most liked/saved. Unknown counts go last. ----
+// Counts arrive as numbers or labels ("1.8천", "3만", "1,234", "12K"); compare them as numbers.
+export function parseCount(x) {
+  if (x == null || x === '') return null;
+  if (typeof x === 'number') return x;
+  const m = /^([\d.,]+)\s*([천만억kmb]?)/i.exec(String(x));
+  if (!m) return null;
+  return parseFloat(m[1].replace(/,/g, '')) * ({ 천: 1e3, 만: 1e4, 억: 1e8, k: 1e3, m: 1e6, b: 1e9 }[m[2].toLowerCase()] || 1);
+}
+const rankKey = (v) => [v.views, v.shares, v.likes, v.saves].map((x) => parseCount(x) ?? -1);
+export function byPopular(a, b) {
+  const x = rankKey(a), y = rankKey(b);
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return y[i] - x[i];
+  return 0;
 }
 
 export const inRange = (range) => (v) => range.min == null || (v.date != null && v.date >= range.min && v.date <= range.max);
 
 // "all": every source in parallel, interleaved so one platform doesn't bury the rest. A failing source is skipped.
 // Results per platform per search. Firecrawl bills by results (measured: 40 results = 8 credits), so 20 halves it.
-export const PER_SOURCE = 20;
+export const PER_SOURCE = 10;
 
 // Saved searches: the same query+platform+period reuses the stored results instead of spending credits again.
 // store = { get(key) -> {at, list} | null, set(key, {at, list}) } — a folder on the PC, a D1 table on Cloudflare.
@@ -113,14 +135,19 @@ async function saved(store, key, fn) {
   await store.set(key, { at: Date.now(), list }).catch(() => {});
   return list;
 }
-const listKey = (src, q, qdr) => `${src}:${qdr}:${q.toLowerCase()}`;
-const getList = (webSearch, store, src, q, qdr) => {
-  const key = listKey(src, q, qdr);
-  return cached(key, () => saved(store, key, () => searchSource(webSearch, src, q, qdr)).finally(() => (credits = null)));
+// free = { yt: (q) => list } — platforms that can be searched without Firecrawl (YouTube via yt-dlp on the PC).
+// A free search that fails falls back to Firecrawl.
+const listKey = (src, q, qdr, free) => `${src}${free?.[src] ? '+free' : ''}:${qdr}:${q.toLowerCase()}`;
+const getList = (webSearch, store, src, q, qdr, free) => {
+  const key = listKey(src, q, qdr, free);
+  const paid = () => searchSource(webSearch, src, q, qdr);
+  const run = free?.[src] ? () => free[src](q, qdr).then((l) => l.sort(byPopular)).catch(paid) : paid;
+  return cached(key, () => saved(store, key, run).finally(() => (credits = null)));
 };
-// Would this platform's search spend credits (not in memory, not saved within SAVED_FOR)?
-async function costsCredits(store, src, q, qdr) {
-  const key = listKey(src, q, qdr);
+// Would this platform's search spend credits (not free, not in memory, not saved within SAVED_FOR)?
+async function costsCredits(store, src, q, qdr, free) {
+  if (free?.[src]) return false;
+  const key = listKey(src, q, qdr, free);
   if (cache.has(key)) return false;
   const hit = store && (await store.get(key).catch(() => null));
   return !(hit && Date.now() - hit.at < SAVED_FOR);
@@ -130,10 +157,10 @@ async function costsCredits(store, src, q, qdr) {
 // Firecrawl gives a monthly pot of credits. Spread what's left evenly over the days until it refills:
 //   today's budget = credits left this morning ÷ days until the refill.
 // "Used today" is measured from Firecrawl's real balance, so it stays right even across restarts/devices.
-export const COST_PER_SOURCE = 4; // measured: one platform, 20 results = 4 credits
+export const COST_PER_SOURCE = 2; // measured: one platform, 20 results = 4 credits, so 10 results = 2
 let credits = null; // { at, v } — balance cached for a minute
 const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
-export async function creditStatus(store, readCredits) {
+export async function creditStatus(store, readCredits, free) {
   if (!credits || Date.now() - credits.at > 60_000) credits = { at: Date.now(), v: await readCredits() };
   const c = credits.v; // { remainingCredits, planCredits, billingPeriodEnd }
   const key = 'budget:' + kstDay();
@@ -147,7 +174,8 @@ export async function creditStatus(store, readCredits) {
   return {
     remaining: c.remainingCredits, plan: c.planCredits, resetAt: c.billingPeriodEnd, daysLeft: day.daysLeft,
     budget: day.budget, used, left: Math.max(0, day.budget - used),
-    costOne: COST_PER_SOURCE, costAll: COST_PER_SOURCE * Object.keys(SOURCES).length,
+    costOne: COST_PER_SOURCE, costAll: COST_PER_SOURCE * Object.keys(SOURCES).filter((s) => !free?.[s]).length,
+    free: Object.keys(free || {}),
   };
 }
 export async function firecrawlCredits(key) {
@@ -157,15 +185,13 @@ export async function firecrawlCredits(key) {
   return j.data || j;
 }
 
-export async function searchAll(webSearch, store, q, range) {
-  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => getList(webSearch, store, s, q, range.qdr)));
+export async function searchAll(webSearch, store, q, range, free) {
+  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => getList(webSearch, store, s, q, range.qdr, free)));
   if (settled.every((r) => r.status === 'rejected')) throw settled[0].reason; // e.g. Firecrawl 429 — show it instead of "0 results"
   if (range.min != null) await withYtDates(settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
   const lists = settled.map((r) => (r.status === 'fulfilled' ? r.value.filter(inRange(range)) : []));
   const failed = Object.keys(SOURCES).filter((_, i) => settled[i].status === 'rejected');
-  const out = [];
-  for (let i = 0; i < PER_SOURCE; i++) for (const l of lists) if (l[i]) out.push(l[i]);
-  return { out, failed };
+  return { out: lists.flat().sort(byPopular), failed };
 }
 
 
@@ -183,7 +209,7 @@ export async function firecrawlSearch(key, query, qdr) {
 }
 
 // GET /api/search, as { status, body, failed } so both runtimes can wrap it in their own response type.
-export async function handleSearch(params, webSearch, store, readCredits) {
+export async function handleSearch(params, webSearch, store, readCredits, free) {
   const q = (params.get('q') || '').trim();
   if (!q) return { status: 400, body: { error: '검색어가 비었어요' } };
   const src = params.get('src');
@@ -191,18 +217,18 @@ export async function handleSearch(params, webSearch, store, readCredits) {
   // Refuse new (credit-spending) searches once today's budget is used; saved searches always work.
   if (readCredits && (src === 'all' || SOURCES[src])) {
     const paid = [];
-    for (const s of src === 'all' ? Object.keys(SOURCES) : [src]) if (await costsCredits(store, s, q, range.qdr)) paid.push(s);
+    for (const s of src === 'all' ? Object.keys(SOURCES) : [src]) if (await costsCredits(store, s, q, range.qdr, free)) paid.push(s);
     const cost = paid.length * COST_PER_SOURCE;
-    const st = cost ? await creditStatus(store, readCredits).catch(() => null) : null; // balance unknown: don't block
+    const st = cost ? await creditStatus(store, readCredits, free).catch(() => null) : null; // balance unknown: don't block
     if (st && st.left < cost)
       return { status: 429, body: { error: `오늘 검색량을 다 썼어요. 이 검색은 ${cost}크레딧이 필요한데 오늘 남은 건 ${st.left}크레딧이에요. 이미 했던 검색은 그대로 볼 수 있고, 내일 다시 채워져요.` } };
   }
   if (src === 'all') {
-    const { out, failed } = await searchAll(webSearch, store, q, range);
+    const { out, failed } = await searchAll(webSearch, store, q, range, free);
     return { status: 200, body: out, failed };
   }
   if (!SOURCES[src]) return { status: 400, body: { error: 'unknown source' } };
-  const list = await getList(webSearch, store, src, q, range.qdr);
+  const list = await getList(webSearch, store, src, q, range.qdr, free);
   if (range.min != null) await withYtDates(list);
   return { status: 200, body: list.filter(inRange(range)) };
 }
@@ -234,7 +260,7 @@ export function fetchStats(src, ref) {
       const h = await page(`https://www.tiktok.com/@_/video/${ref}`);
       const st = new RegExp(`"id":"${ref}"[\\s\\S]*?"stats":(\\{[^}]*\\})`).exec(h)?.[1];
       const j = st ? JSON.parse(st) : {};
-      return { views: j.playCount ?? null, likes: j.diggCount ?? null, comments: j.commentCount ?? null };
+      return { views: j.playCount ?? null, likes: j.diggCount ?? null, comments: j.commentCount ?? null, shares: j.shareCount ?? null };
     }
     if (src === 'pin') {
       const j = JSON.parse(await page(`https://widgets.pinterest.com/v3/pidgets/pins/info/?pin_ids=${ref}`));

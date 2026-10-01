@@ -71,9 +71,18 @@ export default {
         set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
       };
       const readCredits = () => firecrawlCredits(env.FIRECRAWL_API_KEY);
-      if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits));
+      // While the analysis PC is on, YouTube is searched there with yt-dlp (no credits); otherwise via Firecrawl.
+      const pc = (p === '/api/search' || p === '/api/credits') && (await analyzer(env));
+      const free = pc && {
+        yt: async (q) => {
+          const r = await fetch(`${pc}/api/ytsearch?q=${encodeURIComponent(q)}`, { headers: { 'x-ref-token': env.ANALYZER_TOKEN } });
+          if (!r.ok) throw new Error('PC search failed');
+          return r.json();
+        },
+      };
+      if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits, free));
       if (m === 'GET' && p === '/api/search') {
-        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits);
+        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits, free);
         return json(r.body, r.status, r.failed ? { 'x-failed': r.failed.join(',') } : {});
       }
 

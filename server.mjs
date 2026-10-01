@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats } from './search.mjs';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats, byPopular } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -194,6 +194,18 @@ function searchScenes(q) {
   return out.sort((x, y) => y.matches.length - x.matches.length);
 }
 
+// YouTube Shorts search without Firecrawl: yt-dlp's YouTube search, short videos only (free, ~3-5 s).
+// The query is one argv entry after "ytsearch40:", so it can't be read as a yt-dlp option.
+async function youtubeFree(q) {
+  const j = await ytdlp(['--flat-playlist', '-J', `ytsearch40:${q} shorts`]);
+  return (j.entries || [])
+    .filter((e) => e.id && e.duration && e.duration <= 180)
+    .map((e) => ({ src: 'yt', ref: e.id, url: `https://www.youtube.com/shorts/${e.id}`, title: e.title || '', channel: e.channel || '', views: e.view_count ?? null }))
+    .sort(byPopular)
+    .slice(0, 20);
+}
+const free = { yt: youtubeFree };
+
 // Firecrawl balance: REST API with a key, else the logged-in CLI (same shape: remainingCredits, planCredits, billingPeriodEnd).
 const readCredits = async () => {
   const key = firecrawlKey();
@@ -296,11 +308,13 @@ http
       if (req.method === 'GET' && p === '/api/videos') return json(res, 200, load());
       if (req.method === 'GET' && p === '/api/status') return json(res, 200, { analyzer: true });
       if (req.method === 'GET' && p === '/api/search') {
-        const r = await handleSearch(url.searchParams, webSearch, searchStore, readCredits);
+        const r = await handleSearch(url.searchParams, webSearch, searchStore, readCredits, free);
         if (r.failed) res.setHeader('x-failed', r.failed.join(','));
         return json(res, r.status, r.body);
       }
-      if (req.method === 'GET' && p === '/api/credits') return json(res, 200, await creditStatus(searchStore, readCredits));
+      if (req.method === 'GET' && p === '/api/credits') return json(res, 200, await creditStatus(searchStore, readCredits, free));
+      // Used by the Cloudflare Worker (through the tunnel) so its YouTube search is free too.
+      if (req.method === 'GET' && p === '/api/ytsearch') return json(res, 200, await youtubeFree((url.searchParams.get('q') || '').trim()));
       if (req.method === 'GET' && p === '/api/stats') {
         const src = url.searchParams.get('src');
         const ref = url.searchParams.get('ref') || '';

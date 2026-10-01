@@ -69,6 +69,10 @@ npx wrangler deploy
 { "url": "https://ref-insta.<account>.workers.dev", "token": "<ANALYZER_TOKEN>" }
 ```
 
+Finished analyses are copied to D1 too (scene frames as small JPEGs, ~250 KB per video), so a video
+analysed once shows its timeline and is found by 영상 속 말 search even with the PC off; only the
+original video file stays on the PC (the page then uses the platform's own player).
+
 Redeploy after changing `worker.js`, `search.mjs` or `public/`: `npx wrangler deploy`.
 Only one PC is the analyzer at a time — the last one to start wins.
 

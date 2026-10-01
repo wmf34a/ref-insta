@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats, byPopular, youtubeApiSearch, firstOf } from './search.mjs';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats, byPopular, youtubeApiSearch, firstOf, analysisKey, matchScenes } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -170,28 +170,15 @@ async function analyze({ key, link, file, ytId, meta = {} }) {
   fs.writeFileSync(done, JSON.stringify(result));
   return result;
 }
-// "영상 속 말" search: look through every analysis on disk — spoken lines and on-screen text — for all the words.
+// "영상 속 말" search over every analysis on disk.
 // ponytail: reads every analysis.json per query; fine for hundreds of videos, add an index if it grows to thousands.
 function searchScenes(q) {
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length || !fs.existsSync(CACHE_DIR)) return [];
-  const hitAll = (t) => { const l = t.toLowerCase(); return words.every((w) => l.includes(w)); };
-  const out = [];
-  for (const key of fs.readdirSync(CACHE_DIR)) {
-    const f = path.join(CACHE_DIR, key, 'analysis.json');
-    if (!fs.existsSync(f)) continue;
-    const a = JSON.parse(fs.readFileSync(f, 'utf8'));
-    if (!a.src && !a.boardId) continue; // analysed before titles were stored; can't be opened from here
-    const sceneAt = (t) => a.scenes[Math.max(0, a.scenes.findLastIndex((s) => s.start <= t + 0.05))];
-    const matches = [
-      ...a.script.filter(([, , t]) => hitAll(t)).map(([start, , text]) => ({ kind: 'say', start, text, img: sceneAt(start)?.img })),
-      ...a.scenes.filter((s) => s.text && hitAll(s.text)).map((s) => ({ kind: 'screen', start: s.start, text: s.text, img: s.img })),
-    ].sort((x, y) => x.start - y.start);
-    if (!matches.length && !hitAll(a.title || '')) continue;
-    const { src, ref, url, title, channel, boardId } = a;
-    out.push({ src, ref, url, title, channel, boardId, matches, thumb: matches[0]?.img || a.scenes[0]?.img });
-  }
-  return out.sort((x, y) => y.matches.length - x.matches.length);
+  if (!fs.existsSync(CACHE_DIR)) return [];
+  const all = fs.readdirSync(CACHE_DIR)
+    .map((key) => path.join(CACHE_DIR, key, 'analysis.json'))
+    .filter((f) => fs.existsSync(f))
+    .map((f) => JSON.parse(fs.readFileSync(f, 'utf8')));
+  return matchScenes(all, q);
 }
 
 // YouTube Shorts search without Firecrawl: yt-dlp's YouTube search, short videos only (free, ~3-5 s).
@@ -273,6 +260,44 @@ const cloud = fs.existsSync(CLOUD_FILE) ? JSON.parse(fs.readFileSync(CLOUD_FILE,
 const fromTunnel = (req) => 'cf-connecting-ip' in req.headers;
 const tokenOk = (req) => cloud && req.headers['x-ref-token'] === cloud.token;
 
+// Copy finished analyses to the Worker (D1), so their timeline and 영상 속 말 search work with this PC off.
+// Scene frames go up as small JPEGs (t001.jpg…); the video itself stays here (too big — the player falls back to the embed).
+const pushing = new Set();
+async function pushAnalysis(key) {
+  if (!cloud || pushing.has(key)) return;
+  const dir = path.join(CACHE_DIR, key);
+  const done = path.join(dir, 'analysis.json');
+  if (!fs.existsSync(done) || fs.existsSync(path.join(dir, 'pushed'))) return;
+  pushing.add(key);
+  try {
+    const a = JSON.parse(fs.readFileSync(done, 'utf8'));
+    const put = async (p, body, type) => {
+      const r = await fetch(cloud.url + p, { method: 'PUT', headers: { 'x-ref-token': cloud.token, 'content-type': type }, body });
+      if (!r.ok) throw new Error(`${p} ${r.status} ${await r.text()}`);
+    };
+    for (const s of a.scenes) {
+      const name = path.basename(s.img).replace(/^s/, 't');
+      const small = path.join(dir, name);
+      if (!fs.existsSync(small)) await run('ffmpeg', ['-v', 'error', '-y', '-i', path.join(dir, path.basename(s.img)), '-vf', 'scale=240:-2', '-q:v', '5', small]);
+      await put(`/api/media/${key}/${name}`, fs.readFileSync(small), 'image/jpeg');
+      s.img = `/m/${key}/${name}`;
+    }
+    delete a.video;
+    await put(`/api/analysis/${key}`, JSON.stringify(a), 'application/json');
+    fs.writeFileSync(path.join(dir, 'pushed'), String(Date.now()));
+    console.log('클라우드에 분석 저장: ' + key);
+  } catch (e) {
+    console.log(`클라우드 저장 실패 (${key}): ${e.message}`);
+  } finally {
+    pushing.delete(key);
+  }
+}
+// Analyses made before (or while offline) go up once at startup, one at a time.
+async function pushBacklog() {
+  if (!cloud || !fs.existsSync(CACHE_DIR)) return;
+  for (const key of fs.readdirSync(CACHE_DIR)) if (/^[\w-]+$/.test(key) && key !== 'search') await pushAnalysis(key);
+}
+
 function startTunnel() {
   const bin = process.env.CLOUDFLARED || 'cloudflared';
   const child = spawn(bin, ['tunnel', '--no-autoupdate', '--url', `http://localhost:${PORT}`], { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -329,15 +354,19 @@ http
           const item = load().find((v) => v.id === id && v.file);
           if (!item) return json(res, 404, { error: 'not found' });
           const meta = { boardId: id, title: item.title };
-          return json(res, 200, await cached('a:file:' + id, () => analyze({ key: 'file_' + id, file: path.join(VIDEO_DIR, item.file), meta })));
+          const a = await cached('a:file:' + id, () => analyze({ key: 'file_' + id, file: path.join(VIDEO_DIR, item.file), meta }));
+          pushAnalysis('file_' + id);
+          return json(res, 200, a);
         }
         const src = url.searchParams.get('src');
         const ref = url.searchParams.get('ref') || '';
         const link = url.searchParams.get('url') || '';
         if (!SOURCES[src] || !REF_OK.test(ref) || !linkOk(src, link)) return json(res, 400, { error: 'bad item' });
-        const key = `${src}_${ref.replace(/[^\w-]/g, '_')}`;
+        const key = analysisKey(src, ref);
         const meta = { src, ref, url: link, title: (url.searchParams.get('title') || '').slice(0, 300), channel: (url.searchParams.get('channel') || '').slice(0, 100) };
-        return json(res, 200, await cached('a:' + key, () => analyze({ key, link, ytId: src === 'yt' ? ref : null, meta })));
+        const a = await cached('a:' + key, () => analyze({ key, link, ytId: src === 'yt' ? ref : null, meta }));
+        pushAnalysis(key);
+        return json(res, 200, a);
       }
       if (req.method === 'POST' && p === '/api/save') {
         const item = newBoardItem(JSON.parse((await readBody(req)).toString() || '{}'), crypto.randomUUID().slice(0, 8));
@@ -387,5 +416,9 @@ http
   })
   .listen(PORT, () => {
     console.log(`ref → http://localhost:${PORT}`);
-    if (cloud) startTunnel();
+    if (cloud) {
+      startTunnel();
+      pushBacklog();
+      setInterval(pushBacklog, 30 * 60_000); // retry anything that failed to upload (network blips, PC was offline)
+    }
   });

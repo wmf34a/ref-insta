@@ -3,7 +3,7 @@
 // proxied to the analysis PC (server.mjs), which registers its Cloudflare Tunnel URL here via /api/analyzer.
 //
 // Secrets: APP_PASSWORD (site login), FIRECRAWL_API_KEY, ANALYZER_TOKEN (shared with the PC's .cloud.json).
-import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoardItem, fetchStats, youtubeApiSearch, firstOf, SOURCES, REF_OK } from './search.mjs';
+import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoardItem, fetchStats, youtubeApiSearch, firstOf, analysisKey, matchScenes, SOURCES, REF_OK } from './search.mjs';
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -60,6 +60,24 @@ export default {
       if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(tunnel || '')) return json({ error: 'bad url' }, 400);
       await env.DB.prepare("INSERT OR REPLACE INTO kv (k, v) VALUES ('analyzer', ?)").bind(JSON.stringify({ url: tunnel, seen: Date.now() })).run();
       return json({ ok: true });
+    }
+
+    // The PC copying a finished analysis (JSON + small scene frames) here. Token-protected.
+    const up = /^\/api\/(analysis|media)\/([\w-]{1,120})(?:\/(t\d{3}\.jpg))?$/.exec(p);
+    if (m === 'PUT' && up) {
+      if (!env.ANALYZER_TOKEN || req.headers.get('x-ref-token') !== env.ANALYZER_TOKEN) return json({ error: 'forbidden' }, 403);
+      const [, kind, key, file] = up;
+      if (kind === 'analysis' && !file) {
+        await env.DB.prepare('INSERT OR REPLACE INTO analyses (k, v, at) VALUES (?, ?, ?)').bind(key, await req.text(), Date.now()).run();
+        return json({ ok: true });
+      }
+      if (kind === 'media' && file) {
+        const data = await req.arrayBuffer();
+        if (data.byteLength > 1_000_000) return json({ error: 'too big' }, 413);
+        await env.DB.prepare('INSERT OR REPLACE INTO media (k, type, data) VALUES (?, ?, ?)').bind(`${key}/${file}`, 'image/jpeg', data).run();
+        return json({ ok: true });
+      }
+      return json({ error: 'bad path' }, 400);
     }
 
     if (!(await authed(req, env))) return new Response('로그인이 필요해요', { status: 401, headers: { 'www-authenticate': 'Basic realm="ref", charset="UTF-8"' } });
@@ -134,8 +152,32 @@ export default {
         }
       }
 
+      // Saved analyses (copied here by the PC) answer without the PC; a new analysis still needs it.
+      if (m === 'GET' && p === '/api/analyze') {
+        const sp = url.searchParams;
+        const key = sp.get('id') ? 'file_' + sp.get('id') : SOURCES[sp.get('src')] && REF_OK.test(sp.get('ref') || '') ? analysisKey(sp.get('src'), sp.get('ref')) : null;
+        const row = key && (await env.DB.prepare('SELECT v FROM analyses WHERE k = ?').bind(key).first());
+        if (row) {
+          const a = JSON.parse(row.v);
+          if (await analyzer(env)) a.video = `/cache/${key}/video.mp4`; // PC on: play its exact copy (scene clicks seek)
+          return json(a);
+        }
+        return proxy(req, env, p + url.search);
+      }
+      if (m === 'GET' && p === '/api/scenes') {
+        const rows = (await env.DB.prepare('SELECT v FROM analyses').all()).results;
+        return json(matchScenes(rows.map((r) => JSON.parse(r.v)), (url.searchParams.get('q') || '').trim()));
+      }
+      const media = /^\/m\/([\w-]{1,120}\/t\d{3}\.jpg)$/.exec(p);
+      if (m === 'GET' && media) {
+        const row = await env.DB.prepare('SELECT type, data FROM media WHERE k = ?').bind(media[1]).first();
+        if (!row) return new Response('not found', { status: 404 });
+        // D1 hands BLOBs back as a plain array of bytes; wrap it or the response body comes out empty.
+        return new Response(new Uint8Array(row.data), { headers: { 'content-type': row.type, 'cache-control': 'private, max-age=31536000, immutable' } });
+      }
+
       // Needs the analysis PC
-      if (p === '/api/analyze' || p === '/api/scenes' || p.startsWith('/cache/') || p.startsWith('/videos/')) return proxy(req, env, p + url.search);
+      if (p.startsWith('/cache/') || p.startsWith('/videos/')) return proxy(req, env, p + url.search);
       if (p.startsWith('/api/')) return json({ error: 'not found' }, 404);
       return env.ASSETS.fetch(req);
     } catch (e) {

@@ -310,3 +310,26 @@ export const firstOf = (fns) => async (q, qdr) => {
   }
   throw err;
 };
+
+// Cache/analysis key for a post: same on the PC (folder name) and in the Worker (D1 row).
+export const analysisKey = (src, ref) => `${src}_${ref.replace(/[^\w-]/g, '_')}`;
+
+// "영상 속 말" search over analyses ([{...analysis}]): spoken lines and on-screen text containing all the words.
+export function matchScenes(analyses, q) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const hitAll = (t) => { const l = t.toLowerCase(); return words.every((w) => l.includes(w)); };
+  const out = [];
+  for (const a of analyses) {
+    if (!a.src && !a.boardId) continue; // analysed before titles were stored; can't be opened from here
+    const sceneAt = (t) => a.scenes[Math.max(0, a.scenes.findLastIndex((s) => s.start <= t + 0.05))];
+    const matches = [
+      ...a.script.filter(([, , t]) => hitAll(t)).map(([start, , text]) => ({ kind: 'say', start, text, img: sceneAt(start)?.img })),
+      ...a.scenes.filter((s) => s.text && hitAll(s.text)).map((s) => ({ kind: 'screen', start: s.start, text: s.text, img: s.img })),
+    ].sort((x, y) => x.start - y.start);
+    if (!matches.length && !hitAll(a.title || '')) continue;
+    const { src, ref, url, title, channel, boardId } = a;
+    out.push({ src, ref, url, title, channel, boardId, matches, thumb: matches[0]?.img || a.scenes[0]?.img });
+  }
+  return out.sort((x, y) => y.matches.length - x.matches.length);
+}

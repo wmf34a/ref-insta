@@ -504,12 +504,17 @@ async function loadAnalysis(v, seq, at) {
     if (seq !== openSeq) return;
     if (!r.ok) throw new Error(d.error);
     analysis = d;
-    // Play the downloaded file so scene clicks can seek exactly.
-    $('#player').innerHTML = `<video src="${d.video}" controls playsinline autoplay></video>`;
-    const vid = $('#player video');
-    vid.ontimeupdate = () => highlight(vid.currentTime);
-    if (at != null) vid.addEventListener('loadedmetadata', () => { vid.currentTime = at + 0.01; }, { once: true });
-    $('#dlVideo').href = d.video; $('#dlVideo').hidden = false;
+    // Play the downloaded file so scene clicks can seek exactly. A saved analysis viewed with the PC off has no
+    // file: keep the platform's own player (YouTube can still jump to a scene via start=).
+    if (d.video) {
+      $('#player').innerHTML = `<video src="${d.video}" controls playsinline autoplay></video>`;
+      const vid = $('#player video');
+      vid.ontimeupdate = () => highlight(vid.currentTime);
+      if (at != null) vid.addEventListener('loadedmetadata', () => { vid.currentTime = at + 0.01; }, { once: true });
+      $('#dlVideo').href = d.video; $('#dlVideo').hidden = false;
+    } else if (at != null && v.src === 'yt') {
+      $('#player iframe').src = SRC.yt.embed(v.ref, `&autoplay=1&start=${Math.floor(at)}`);
+    }
     if (d.scenes[0]) { $('#dlThumb').href = d.scenes[0].img; $('#dlThumb').hidden = false; }
     // Each spoken line goes under the shot it starts in, so a long line isn't repeated across quick cuts.
     const sceneOf = (t) => Math.max(0, d.scenes.findLastIndex((s) => s.start <= t + 0.05));
@@ -659,6 +664,10 @@ $('#grid').addEventListener('mouseover', (e) => {
 
 $('#scenes').onclick = (e) => {
   const row = e.target.closest('[data-s]');
+  if (row && !$('#player video') && current?.src === 'yt') { // no local file: jump the YouTube player instead
+    $('#player iframe').src = SRC.yt.embed(current.ref, `&autoplay=1&start=${Math.floor(row.dataset.s)}`);
+    return highlight(Number(row.dataset.s));
+  }
   const vid = $('#player video');
   if (row && vid) { vid.currentTime = Number(row.dataset.s) + 0.01; vid.play().catch(() => {}); highlight(vid.currentTime); }
 };

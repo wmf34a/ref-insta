@@ -113,10 +113,49 @@ async function saved(store, key, fn) {
   await store.set(key, { at: Date.now(), list }).catch(() => {});
   return list;
 }
+const listKey = (src, q, qdr) => `${src}:${qdr}:${q.toLowerCase()}`;
 const getList = (webSearch, store, src, q, qdr) => {
-  const key = `${src}:${qdr}:${q.toLowerCase()}`;
-  return cached(key, () => saved(store, key, () => searchSource(webSearch, src, q, qdr)));
+  const key = listKey(src, q, qdr);
+  return cached(key, () => saved(store, key, () => searchSource(webSearch, src, q, qdr)).finally(() => (credits = null)));
 };
+// Would this platform's search spend credits (not in memory, not saved within SAVED_FOR)?
+async function costsCredits(store, src, q, qdr) {
+  const key = listKey(src, q, qdr);
+  if (cache.has(key)) return false;
+  const hit = store && (await store.get(key).catch(() => null));
+  return !(hit && Date.now() - hit.at < SAVED_FOR);
+}
+
+// ---- Daily search budget ----
+// Firecrawl gives a monthly pot of credits. Spread what's left evenly over the days until it refills:
+//   today's budget = credits left this morning ÷ days until the refill.
+// "Used today" is measured from Firecrawl's real balance, so it stays right even across restarts/devices.
+export const COST_PER_SOURCE = 4; // measured: one platform, 20 results = 4 credits
+let credits = null; // { at, v } — balance cached for a minute
+const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+export async function creditStatus(store, readCredits) {
+  if (!credits || Date.now() - credits.at > 60_000) credits = { at: Date.now(), v: await readCredits() };
+  const c = credits.v; // { remainingCredits, planCredits, billingPeriodEnd }
+  const key = 'budget:' + kstDay();
+  let day = store && (await store.get(key).catch(() => null));
+  if (!day) {
+    const daysLeft = Math.max(1, Math.ceil((Date.parse(c.billingPeriodEnd) - Date.now()) / DAY) || 1);
+    day = { start: c.remainingCredits, daysLeft, budget: Math.floor(c.remainingCredits / daysLeft) };
+    await store?.set(key, day).catch(() => {});
+  }
+  const used = Math.max(0, day.start - c.remainingCredits);
+  return {
+    remaining: c.remainingCredits, plan: c.planCredits, resetAt: c.billingPeriodEnd, daysLeft: day.daysLeft,
+    budget: day.budget, used, left: Math.max(0, day.budget - used),
+    costOne: COST_PER_SOURCE, costAll: COST_PER_SOURCE * Object.keys(SOURCES).length,
+  };
+}
+export async function firecrawlCredits(key) {
+  const r = await fetch('https://api.firecrawl.dev/v2/team/credit-usage', { headers: { authorization: `Bearer ${key}` } });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || `Firecrawl ${r.status}`);
+  return j.data || j;
+}
 
 export async function searchAll(webSearch, store, q, range) {
   const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => getList(webSearch, store, s, q, range.qdr)));
@@ -144,11 +183,20 @@ export async function firecrawlSearch(key, query, qdr) {
 }
 
 // GET /api/search, as { status, body, failed } so both runtimes can wrap it in their own response type.
-export async function handleSearch(params, webSearch, store) {
+export async function handleSearch(params, webSearch, store, readCredits) {
   const q = (params.get('q') || '').trim();
   if (!q) return { status: 400, body: { error: '검색어가 비었어요' } };
   const src = params.get('src');
   const range = dateRange(params);
+  // Refuse new (credit-spending) searches once today's budget is used; saved searches always work.
+  if (readCredits && (src === 'all' || SOURCES[src])) {
+    const paid = [];
+    for (const s of src === 'all' ? Object.keys(SOURCES) : [src]) if (await costsCredits(store, s, q, range.qdr)) paid.push(s);
+    const cost = paid.length * COST_PER_SOURCE;
+    const st = cost ? await creditStatus(store, readCredits).catch(() => null) : null; // balance unknown: don't block
+    if (st && st.left < cost)
+      return { status: 429, body: { error: `오늘 검색량을 다 썼어요. 이 검색은 ${cost}크레딧이 필요한데 오늘 남은 건 ${st.left}크레딧이에요. 이미 했던 검색은 그대로 볼 수 있고, 내일 다시 채워져요.` } };
+  }
   if (src === 'all') {
     const { out, failed } = await searchAll(webSearch, store, q, range);
     return { status: 200, body: out, failed };

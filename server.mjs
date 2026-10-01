@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, handleSearch, newBoardItem, PER_SOURCE, fetchStats } from './search.mjs';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -194,6 +194,14 @@ function searchScenes(q) {
   return out.sort((x, y) => y.matches.length - x.matches.length);
 }
 
+// Firecrawl balance: REST API with a key, else the logged-in CLI (same shape: remainingCredits, planCredits, billingPeriodEnd).
+const readCredits = async () => {
+  const key = firecrawlKey();
+  if (key) return firecrawlCredits(key);
+  const j = await runJson('firecrawl', ['credit-usage', '--json']);
+  return j.data || j;
+};
+
 // Saved search results on disk (cache/search/<sha1 of key>.json), so they survive restarts.
 const SEARCH_DIR = path.join(ROOT, 'cache', 'search');
 const searchFile = (key) => path.join(SEARCH_DIR, crypto.createHash('sha1').update(key).digest('hex') + '.json');
@@ -288,10 +296,11 @@ http
       if (req.method === 'GET' && p === '/api/videos') return json(res, 200, load());
       if (req.method === 'GET' && p === '/api/status') return json(res, 200, { analyzer: true });
       if (req.method === 'GET' && p === '/api/search') {
-        const r = await handleSearch(url.searchParams, webSearch, searchStore);
+        const r = await handleSearch(url.searchParams, webSearch, searchStore, readCredits);
         if (r.failed) res.setHeader('x-failed', r.failed.join(','));
         return json(res, r.status, r.body);
       }
+      if (req.method === 'GET' && p === '/api/credits') return json(res, 200, await creditStatus(searchStore, readCredits));
       if (req.method === 'GET' && p === '/api/stats') {
         const src = url.searchParams.get('src');
         const ref = url.searchParams.get('ref') || '';

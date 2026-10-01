@@ -5,24 +5,57 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ref</title>
 <style>
-  :root { --bg:#f6f6f4; --card:#fff; --fg:#161616; --mute:#777; --line:#e3e3df; --accent:#3b5bfd; color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#111; --card:#1c1c1c; --fg:#eee; --mute:#999; --line:#2c2c2c; } }
+  :root { --bg:#f5f6f8; --card:#fff; --fg:#17181c; --mute:#7a7d86; --line:#e6e8ec; --accent:#2f5bff; --soft:#eef2ff; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1012; --card:#18191c; --fg:#eceef2; --mute:#9a9ea8; --line:#2a2c31; --soft:#1d2440; } }
   * { box-sizing: border-box; }
   [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 -apple-system, "Pretendard", system-ui, sans-serif; }
-  header { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; padding:12px 16px; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
-  header b { font-size:18px; letter-spacing:-.5px; }
-  form { flex:1; min-width:0; display:flex; }
-  #q { flex:1; min-width:0; padding:10px 16px; border:1px solid var(--line); border-radius:999px; background:var(--card); color:inherit; font:inherit; font-size:15px; }
-  button, .btn { padding:9px 14px; border:0; border-radius:999px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; text-decoration:none; }
-  button.ghost, a.ghost { background:transparent; color:var(--fg); border:1px solid var(--line); }
-  nav { display:flex; gap:6px; padding:12px 16px 0; flex-wrap:wrap; align-items:center; }
-  .chip { padding:5px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font-weight:500; }
-  .chip.on { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+  button, .btn { padding:9px 14px; border:0; border-radius:10px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; white-space:nowrap; text-decoration:none; }
+  button.ghost, a.ghost { background:var(--card); color:var(--fg); border:1px solid var(--line); }
+  .chip { padding:6px 12px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font-weight:500; }
+  .chip.on { background:var(--soft); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, transparent); }
+
+  /* App shell: left menu + main column. */
+  .app { display:grid; grid-template-columns:232px minmax(0,1fr); min-height:100dvh; }
+  .side-nav { position:sticky; top:0; height:100dvh; display:flex; flex-direction:column; gap:4px; padding:18px 12px; background:var(--card); border-right:1px solid var(--line); }
+  .logo { font-size:20px; font-weight:800; letter-spacing:-.6px; padding:2px 10px 16px; }
+  .logo span { color:var(--accent); }
+  .navbtn { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px; background:none; color:var(--fg); font-weight:500; border-radius:10px; text-align:left; }
+  .navbtn svg { width:18px; height:18px; flex:none; fill:none; stroke:currentColor; stroke-width:2; }
+  .navbtn:hover { background:var(--bg); }
+  .navbtn.on { background:var(--soft); color:var(--accent); font-weight:700; }
+  .navbtn #cnt { margin-left:auto; font-size:12px; color:var(--mute); font-weight:500; }
+  .navfoot { margin-top:auto; display:flex; flex-direction:column; gap:10px; }
+  .credit { border:1px solid var(--line); border-radius:12px; padding:12px; font-size:12px; color:var(--mute); }
+  .credit .h { display:flex; justify-content:space-between; align-items:baseline; color:var(--fg); font-weight:600; font-size:13px; }
+  .credit .big { font-size:18px; font-weight:800; color:var(--fg); }
+  .credit .bar { height:6px; border-radius:99px; background:var(--line); margin:8px 0; overflow:hidden; padding:0; }
+  .credit .bar i { display:block; height:100%; background:var(--accent); border-radius:99px; }
+  .credit details { margin-top:6px; }
+  .credit summary { cursor:pointer; color:var(--accent); }
+  .credit details p { margin:6px 0 0; line-height:1.55; }
+  .pcstate { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--mute); padding:0 4px; }
+  .pcstate i { width:8px; height:8px; border-radius:50%; background:#9a9ea8; }
+  .pcstate.on i { background:#22c55e; }
+
+  .main { min-width:0; }
+  .top { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; padding:16px 24px 12px; background:color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter:blur(10px); }
+  #f { flex:1; min-width:0; display:flex; align-items:center; gap:8px; background:var(--card); border:1.5px solid var(--line); border-radius:16px; padding:6px 6px 6px 8px; box-shadow:0 2px 10px rgba(16,24,40,.05); }
+  #f:focus-within { border-color:var(--accent); }
+  #q { flex:1; min-width:0; padding:8px 6px; border:0; outline:0; background:none; color:inherit; font:inherit; font-size:15px; }
+  #go { padding:9px 18px; border-radius:11px; }
+  .bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:0 24px; }
+  #filterBtn { display:inline-flex; align-items:center; gap:6px; }
+  #filterBtn svg { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; }
+  #fcount { background:var(--accent); color:#fff; border-radius:99px; font-size:11px; padding:0 6px; }
+  #filterPanel { margin:10px 24px 0; padding:14px 16px; background:var(--card); border:1px solid var(--line); border-radius:14px; display:grid; gap:12px; }
+  .fsec { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .ftitle { width:72px; color:var(--mute); font-size:13px; flex:none; }
   #tags { display:contents; }
-  #status { color:var(--mute); padding:0 16px; margin-top:10px; }
-  #grid { columns:5 220px; column-gap:12px; padding:16px; }
-  .card { break-inside:avoid; margin-bottom:12px; background:var(--card); border-radius:12px; overflow:hidden; cursor:pointer; border:1px solid var(--line); }
+  #status { color:var(--mute); }
+  #grid { columns:5 220px; column-gap:14px; padding:14px 24px 24px; }
+  .card { break-inside:avoid; margin-bottom:14px; background:var(--card); border-radius:14px; overflow:hidden; cursor:pointer; border:1px solid var(--line); transition:box-shadow .15s, transform .15s; }
+  .card:hover { box-shadow:0 6px 20px rgba(16,24,40,.10); transform:translateY(-1px); }
   .media { position:relative; background:#000; }
   .media img, .media video { width:100%; display:block; }
   .media iframe { position:absolute; inset:0; width:100%; height:100%; border:0; pointer-events:none; }
@@ -36,7 +69,7 @@
   @media (max-width:600px) { .badge { font-size:11px; padding:3px 7px 3px 4px; } .badge svg { width:14px; height:14px; } }
   #player .light { background:#fff; }
   .dur { position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.75); color:#fff; font-size:11px; padding:1px 6px; border-radius:4px; }
-  .card .meta { padding:8px 10px 10px; }
+  .card .meta { padding:10px 12px 12px; }
   .card .t { font-weight:600; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .card .sub { color:var(--mute); font-size:12px; margin-top:2px; }
   #empty { text-align:center; color:var(--mute); padding:80px 16px; }
@@ -90,10 +123,10 @@
   .filters { display:contents; }
   .grp { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
   .grp > .lbl { color:var(--mute); margin:0 2px 0 10px; white-space:nowrap; }
-  .grp input[type=date] { padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:inherit; font:inherit; }
-  #statusRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:0 16px; margin-top:10px; }
+  .fsec input[type=date] { padding:4px 8px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:inherit; font:inherit; }
+  #statusRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:0 24px; margin-top:12px; }
   #statusRow #status { padding:0; margin:0; }
-  #offline { margin:10px 16px 0; padding:8px 12px; border-radius:10px; font-size:13px; background:color-mix(in srgb, #f5a623 18%, var(--card)); border:1px solid color-mix(in srgb, #f5a623 45%, transparent); }
+  #offline { margin:10px 24px 0; padding:8px 12px; border-radius:10px; font-size:13px; background:color-mix(in srgb, #f5a623 18%, var(--card)); border:1px solid color-mix(in srgb, #f5a623 45%, transparent); }
   #batchBtn { padding:5px 12px; font-size:12px; white-space:nowrap; }
   .date { color:var(--mute); font-size:12px; }
   .stats { display:flex; gap:10px; flex-wrap:wrap; color:var(--mute); font-size:12px; margin-top:4px; min-height:16px; }
@@ -104,7 +137,7 @@
   .hit time { color:var(--accent); font-variant-numeric:tabular-nums; flex:none; }
   .hit .k { color:var(--mute); flex:none; }
   .hit mark { background:color-mix(in srgb, var(--accent) 25%, transparent); color:inherit; border-radius:2px; }
-  .grp select { padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; }
+  .fsec select { padding:7px 10px; border-radius:10px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; }
   @media (max-width:860px) {
     dialog { width:100vw; max-width:100vw; height:100dvh; max-height:100dvh; border-radius:0; overflow:auto; }
     .detail { height:auto; }
@@ -119,45 +152,73 @@
     .pane { overflow:visible; padding:12px 14px; }
     #simGrid { columns:2; }
   }
-  @media (max-width:600px) {
-    header { flex-wrap:wrap; padding:10px 12px; gap:8px; padding-top:calc(10px + env(safe-area-inset-top, 0px)); }
-    header b { display:none; }
-    form { order:3; flex-basis:100%; }
-    .seg { order:1; }
-    #upBtn { order:2; margin-left:auto; }
-    nav { padding:10px 12px 0; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
-    nav::-webkit-scrollbar { display:none; }
+  @media (max-width:760px) {
+    /* Phones: the left menu becomes a bottom tab bar; credits sit above the results. */
+    .app { grid-template-columns:1fr; }
+    .side-nav { position:fixed; top:auto; bottom:0; left:0; right:0; height:auto; z-index:10; flex-direction:row; padding:6px 8px calc(6px + env(safe-area-inset-bottom, 0px)); border-right:0; border-top:1px solid var(--line); }
+    .logo, .navfoot { display:none; }
+    .navbtn { flex-direction:column; gap:2px; font-size:11px; padding:6px; justify-content:center; text-align:center; }
+    .navbtn #cnt { margin:0; }
+    .main { padding-bottom:72px; }
+    .top { padding:10px 12px 8px; padding-top:calc(10px + env(safe-area-inset-top, 0px)); }
+    #f { flex-wrap:wrap; border-radius:14px; }
+    #modes { order:-1; }
+    .bar { padding:0 12px; flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
+    .bar::-webkit-scrollbar { display:none; }
     .grp { flex-wrap:nowrap; }
-    .chip, .grp select { flex:none; }
-    #statusRow { padding:0 12px; }
-    #grid { columns:2; column-gap:8px; padding:10px 8px; }
-    .card { margin-bottom:8px; border-radius:10px; }
-    .card .meta { padding:6px 8px 8px; }
+    .chip { flex:none; }
+    #filterPanel { margin:8px 12px 0; }
+    .ftitle { width:100%; }
+    #statusRow, #creditMini { padding:0 12px; }
+    #offline { margin:8px 12px 0; }
+    #grid { columns:2; column-gap:8px; padding:10px 8px 16px; }
+    .card { margin-bottom:8px; border-radius:12px; }
+    .card .meta { padding:7px 8px 9px; }
     .card .t { font-size:13px; }
   }
+  @media (min-width:761px) { #creditMini { display:none; } }
+  #creditMini { color:var(--mute); font-size:12px; margin-top:8px; }
 </style>
 </head>
 <body>
-<header>
-  <b>ref</b>
-  <div class="seg" id="modes"><button type="button" class="on" data-mode="web">키워드</button><button type="button" data-mode="scene">영상 속 말</button></div>
-  <form id="f"><input id="q" type="search" placeholder="'감성적인 카페 인테리어' 처럼 찾고 싶은 느낌을 입력" autofocus></form>
-  <label class="btn ghost" id="upBtn" hidden>업로드<input id="file" type="file" accept="video/*" multiple hidden></label>
-</header>
-<nav>
-  <button class="chip on" data-tab="search">레퍼런스 찾기</button>
-  <button class="chip" data-tab="board">스크랩북 <span id="cnt"></span></button>
-  <span class="grp" id="srcs"><span class="lbl">플랫폼</span></span>
-  <span class="grp" id="periods"><span class="lbl">올린 날짜</span><button class="chip" data-p="">전체</button><button class="chip" data-p="w">최근 7일</button><button class="chip" data-p="m">최근 30일</button><button class="chip" data-p="90d">최근 90일</button><button class="chip" data-p="6m">최근 6개월</button><button class="chip" data-p="y">최근 1년</button><button class="chip" data-p="custom">직접 고르기</button>
-    <span id="customRange" hidden><input type="date" id="from"> ~ <input type="date" id="to"></span></span>
-  <span class="grp" id="cats"><span class="lbl">주제</span><select id="topic"><option value="">전체</option></select><span class="lbl">형식</span><select id="fmt"><option value="">전체</option></select></span>
-  <span style="width:8px"></span>
-  <span id="tags"></span>
-</nav>
-<div id="offline" hidden>분석 PC가 꺼져 있어요. 검색·스크랩북은 그대로 되고, 타임라인 분석과 영상 속 말 검색은 PC에서 ref 를 켜면 돼요.</div>
-<div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>결과 전부 분석해서 말 검색에 넣기</button></div>
-<main id="grid"></main>
-<div id="empty" hidden></div>
+<div class="app">
+<aside class="side-nav">
+  <div class="logo">re<span>f</span></div>
+  <button class="navbtn on" data-tab="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>레퍼런스 찾기</button>
+  <button class="navbtn" data-tab="board"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>스크랩북 <span id="cnt"></span></button>
+  <div class="navfoot">
+    <div class="credit" id="credit" hidden></div>
+    <div class="pcstate" id="pcstate"><i></i><span>분석 PC 확인 중…</span></div>
+  </div>
+</aside>
+<div class="main">
+  <div class="top">
+    <form id="f">
+      <div class="seg" id="modes"><button type="button" class="on" data-mode="web">키워드</button><button type="button" data-mode="scene">영상 속 말</button></div>
+      <input id="q" type="search" placeholder="'감성적인 카페 인테리어' 처럼 찾고 싶은 느낌을 입력" autofocus>
+      <button id="go">검색</button>
+    </form>
+    <label class="btn ghost" id="upBtn" hidden>업로드<input id="file" type="file" accept="video/*" multiple hidden></label>
+  </div>
+  <div class="bar">
+    <span class="grp" id="srcs"></span>
+    <button class="chip" id="filterBtn" type="button"><svg viewBox="0 0 24 24"><path d="M3 5h18M6 12h12M10 19h4"/></svg>필터 <span id="fcount" hidden></span></button>
+    <span id="tags"></span>
+  </div>
+  <div id="filterPanel" hidden>
+    <div class="fsec" id="periods"><span class="ftitle">올린 날짜</span><button class="chip" data-p="">전체</button><button class="chip" data-p="w">최근 7일</button><button class="chip" data-p="m">최근 30일</button><button class="chip" data-p="90d">최근 90일</button><button class="chip" data-p="6m">최근 6개월</button><button class="chip" data-p="y">최근 1년</button><button class="chip" data-p="custom">직접 고르기</button>
+      <span id="customRange" hidden><input type="date" id="from"> ~ <input type="date" id="to"></span></div>
+    <div class="fsec" id="cats"><span class="ftitle">주제</span><select id="topic"><option value="">전체</option></select></div>
+    <div class="fsec"><span class="ftitle">형식</span><select id="fmt"><option value="">전체</option></select></div>
+    <div class="row"><button class="ghost" type="button" id="fReset">필터 초기화</button><button type="button" id="fClose">닫기</button></div>
+  </div>
+  <div id="creditMini" hidden></div>
+  <div id="offline" hidden>분석 PC가 꺼져 있어요. 검색·스크랩북은 그대로 되고, 타임라인 분석과 영상 속 말 검색은 PC에서 ref 를 켜면 돼요.</div>
+  <div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>결과 전부 분석해서 말 검색에 넣기</button></div>
+  <main id="grid"></main>
+  <div id="empty" hidden></div>
+</div>
+</div>
 <div id="drop" hidden>여기에 놓으면 스크랩북에 올라가요</div>
 
 <dialog id="dlg">
@@ -300,7 +361,12 @@ function render() {
   $('#cnt').textContent = board.length || '';
   document.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   $('#upBtn').hidden = tab !== 'board';
-  $('#srcs').hidden = $('#periods').hidden = $('#cats').hidden = tab !== 'search' || mode === 'scene';
+  const noFilters = tab !== 'search' || mode === 'scene';
+  $('#srcs').hidden = $('#filterBtn').hidden = noFilters;
+  if (noFilters) $('#filterPanel').hidden = true;
+  const active = [period, $('#topic').value, $('#fmt').value].filter(Boolean).length;
+  $('#fcount').hidden = !active; $('#fcount').textContent = active;
+  $('#filterBtn').classList.toggle('on', !$('#filterPanel').hidden || active > 0);
   $('#modes').hidden = tab !== 'search';
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('on', b.dataset.mode === mode));
   document.querySelectorAll('[data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === period));
@@ -349,6 +415,7 @@ async function search(q) {
     results = d;
     const failed = (r.headers.get('x-failed') || '').split(',').filter(Boolean).map((k) => SRC[k].name);
     const noDate = period && src === 'all' ? ' · 핀터레스트는 날짜를 알 수 없어서 기간 필터에서 빠져요' : '';
+    loadCredits();
     $('#status').textContent = `${srcName()} "${q}" 레퍼런스 ${d.length}개` + (failed.length ? ` · ${failed.join(', ')}은(는) 못 불러왔어요 (다시 검색하면 재시도)` : '') + noDate;
   } catch (e) {
     $('#status').textContent = '검색 실패: ' + e.message;
@@ -386,6 +453,26 @@ async function analyzeAll() {
   }));
   $('#batchBtn').disabled = false;
   $('#batchBtn').textContent = seq === batchSeq ? `분석 완료 ${done}개 — [영상 속 말]에서 찾아보세요` : '결과 전부 분석해서 말 검색에 넣기';
+}
+
+// Today's search allowance (see creditStatus in search.mjs): left menu box + one line on phones.
+async function loadCredits() {
+  try {
+    const c = await (await fetch('/api/credits')).json();
+    if (c.error || c.left == null) return;
+    const times = (cost) => Math.floor(c.left / cost);
+    const reset = new Date(c.resetAt);
+    const resetTxt = `${reset.getMonth() + 1}월 ${reset.getDate()}일`;
+    $('#credit').hidden = false;
+    $('#credit').innerHTML = `<div class="h"><span>오늘 검색 가능량</span><span><span class="big">${c.left}</span> / ${c.budget}</span></div>
+      <div class="bar"><i style="width:${c.budget ? Math.round((c.left / c.budget) * 100) : 0}%"></i></div>
+      <div>전체 검색 ${times(c.costAll)}번 · 플랫폼 하나 ${times(c.costOne)}번 더 할 수 있어요</div>
+      <details><summary>어떻게 정해지나요?</summary><p>이번 달 남은 크레딧 ${c.remaining}개를 다시 채워지는 날(${resetTxt})까지 ${c.daysLeft}일로 나눠서, 하루에 ${c.budget}크레딧씩 써요.<br>
+      새 검색은 플랫폼 하나에 ${c.costOne}, 전체 검색은 ${c.costAll}크레딧이 들고, 3일 안에 했던 검색은 무료예요.<br>
+      다 쓰면 결제되는 게 아니라 새 검색만 막히고, 내일 다시 채워져요.</p></details>`;
+    $('#creditMini').hidden = false;
+    $('#creditMini').textContent = `오늘 남은 검색량 ${c.left}/${c.budget}크레딧 · 전체 검색 ${times(c.costAll)}번, 플랫폼 하나 ${times(c.costOne)}번`;
+  } catch {}
 }
 
 async function loadBoard() { board = await (await fetch('/api/videos')).json(); render(); }
@@ -545,6 +632,12 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => {
 });
 $('#from').onchange = $('#to').onchange = () => { if (lastQuery && $('#from').value) search(lastQuery); };
 $('#batchBtn').onclick = analyzeAll;
+$('#filterBtn').onclick = () => { $('#filterPanel').hidden = !$('#filterPanel').hidden; render(); };
+$('#fClose').onclick = () => { $('#filterPanel').hidden = true; render(); };
+$('#fReset').onclick = () => {
+  period = ''; $('#topic').value = ''; $('#fmt').value = '';
+  if (lastQuery) search(lastQuery); else render();
+};
 
 // Hovering a card for a moment starts its analysis in the background, so it's usually ready when opened.
 const prefetched = new Set();
@@ -605,7 +698,12 @@ addEventListener('drop', (e) => { e.preventDefault(); depth = 0; $('#drop').hidd
 
 render();
 loadBoard();
-fetch('/api/status').then((r) => r.json()).then((s) => ($('#offline').hidden = s.analyzer)).catch(() => {});
+fetch('/api/status').then((r) => r.json()).then((s) => {
+  $('#offline').hidden = s.analyzer;
+  $('#pcstate').classList.toggle('on', s.analyzer);
+  $('#pcstate span').textContent = s.analyzer ? '분석 PC 연결됨' : '분석 PC 꺼짐';
+}).catch(() => {});
+loadCredits();
 </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 // proxied to the analysis PC (server.mjs), which registers its Cloudflare Tunnel URL here via /api/analyzer.
 //
 // Secrets: APP_PASSWORD (site login), FIRECRAWL_API_KEY, ANALYZER_TOKEN (shared with the PC's .cloud.json).
-import { handleSearch, firecrawlSearch, newBoardItem, fetchStats, SOURCES, REF_OK } from './search.mjs';
+import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoardItem, fetchStats, SOURCES, REF_OK } from './search.mjs';
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -66,12 +66,14 @@ export default {
 
     try {
       if (m === 'GET' && p === '/api/status') return json({ analyzer: !!(await analyzer(env)) });
+      const store = {
+        get: async (k) => { const r = await env.DB.prepare('SELECT v FROM searches WHERE k = ?').bind(k).first(); return r && JSON.parse(r.v); },
+        set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
+      };
+      const readCredits = () => firecrawlCredits(env.FIRECRAWL_API_KEY);
+      if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits));
       if (m === 'GET' && p === '/api/search') {
-        const store = {
-          get: async (k) => { const r = await env.DB.prepare('SELECT v FROM searches WHERE k = ?').bind(k).first(); return r && JSON.parse(r.v); },
-          set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
-        };
-        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store);
+        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits);
         return json(r.body, r.status, r.failed ? { 'x-failed': r.failed.join(',') } : {});
       }
 

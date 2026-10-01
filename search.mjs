@@ -160,7 +160,9 @@ async function costsCredits(store, src, q, qdr, free) {
 export const COST_PER_SOURCE = 2; // measured: one platform, 20 results = 4 credits, so 10 results = 2
 let credits = null; // { at, v } — balance cached for a minute
 const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
-export async function creditStatus(store, readCredits, free) {
+// people = how many share the budget; who = this person's email. Each person gets an equal share per day.
+const useKey = (who) => `use:${kstDay()}:${who}`;
+export async function creditStatus(store, readCredits, free, who, people = 1) {
   if (!credits || Date.now() - credits.at > 60_000) credits = { at: Date.now(), v: await readCredits() };
   const c = credits.v; // { remainingCredits, planCredits, billingPeriodEnd }
   const key = 'budget:' + kstDay();
@@ -176,8 +178,16 @@ export async function creditStatus(store, readCredits, free) {
     budget: day.budget, used, left: Math.max(0, day.budget - used),
     costOne: COST_PER_SOURCE, costAll: COST_PER_SOURCE * Object.keys(SOURCES).filter((s) => !free?.[s]).length,
     free: Object.keys(free || {}),
+    ...(who && (await personal(store, who, day.budget, people))),
   };
 }
+// Each person's share: an equal split of today's budget (at least one platform search).
+async function personal(store, who, budget, people) {
+  const share = Math.max(COST_PER_SOURCE, Math.floor(budget / Math.max(1, people)));
+  const mine = (await store.get(useKey(who)).catch(() => null))?.used || 0;
+  return { share, mineUsed: mine, mineLeft: Math.max(0, share - mine), people };
+}
+
 export async function firecrawlCredits(key) {
   const r = await fetch('https://api.firecrawl.dev/v2/team/credit-usage', { headers: { authorization: `Bearer ${key}` } });
   const j = await r.json();
@@ -209,7 +219,7 @@ export async function firecrawlSearch(key, query, qdr) {
 }
 
 // GET /api/search, as { status, body, failed } so both runtimes can wrap it in their own response type.
-export async function handleSearch(params, webSearch, store, readCredits, free) {
+export async function handleSearch(params, webSearch, store, readCredits, free, who, people) {
   const q = (params.get('q') || '').trim();
   if (!q) return { status: 400, body: { error: '검색어가 비었어요' } };
   const src = params.get('src');
@@ -219,9 +229,17 @@ export async function handleSearch(params, webSearch, store, readCredits, free) 
     const paid = [];
     for (const s of src === 'all' ? Object.keys(SOURCES) : [src]) if (await costsCredits(store, s, q, range.qdr, free)) paid.push(s);
     const cost = paid.length * COST_PER_SOURCE;
-    const st = cost ? await creditStatus(store, readCredits, free).catch(() => null) : null; // balance unknown: don't block
+    const st = cost ? await creditStatus(store, readCredits, free, who, people).catch(() => null) : null; // balance unknown: don't block
     if (st && st.left < cost)
       return { status: 429, body: { error: `오늘 검색량을 다 썼어요. 이 검색은 ${cost}크레딧이 필요한데 오늘 남은 건 ${st.left}크레딧이에요. 이미 했던 검색은 그대로 볼 수 있고, 내일 다시 채워져요.` } };
+    if (st && who && st.mineLeft < cost)
+      return { status: 429, body: { error: `오늘 내 몫을 다 썼어요. 하루 검색량을 ${st.people}명이 ${st.share}크레딧씩 나눠 쓰는데, 이 검색은 ${cost}크레딧이 필요하고 남은 건 ${st.mineLeft}크레딧이에요. 유튜브 쇼츠 검색과 이미 했던 검색은 계속 돼요.` } };
+    if (who && cost) {
+      // Count it as soon as it's allowed; a failed search costs nothing at Firecrawl but stays counted (rare).
+      const k = useKey(who);
+      const u = (await store.get(k).catch(() => null))?.used || 0;
+      await store.set(k, { at: Date.now(), used: u + cost }).catch(() => {});
+    }
   }
   if (src === 'all') {
     const { out, failed } = await searchAll(webSearch, store, q, range, free);

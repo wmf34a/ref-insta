@@ -8,8 +8,39 @@ import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoard
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 
-// Whole site behind one password (HTTP Basic; any user name). Constant-time-ish compare via hashing.
-async function authed(req, env) {
+// ---- Sign-in ----
+// With Google configured (GOOGLE_CLIENT_ID/SECRET, ALLOWED_EMAILS, SESSION_SECRET) people sign in with Google and only
+// listed emails get in; a signed cookie keeps them in for 30 days. Without it, the old shared password (APP_PASSWORD).
+const SESSION_DAYS = 30;
+const enc = new TextEncoder();
+const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+const hmacKey = (env) => crypto.subtle.importKey('raw', enc.encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+const googleOn = (env) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SECRET && env.ALLOWED_EMAILS);
+const allowed = (env) => env.ALLOWED_EMAILS.split(/[\s,]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+const cookie = (req, name) => new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(req.headers.get('cookie') || '')?.[1];
+
+async function makeSession(env, user) {
+  const body = b64url(enc.encode(JSON.stringify({ ...user, exp: Date.now() + SESSION_DAYS * 86400e3 })));
+  const sig = b64url(await crypto.subtle.sign('HMAC', await hmacKey(env), enc.encode(body)));
+  return `${body}.${sig}`;
+}
+async function readSession(env, req) {
+  const [body, sig] = (cookie(req, 'ref_session') || '').split('.');
+  if (!body || !sig) return null;
+  if (!(await crypto.subtle.verify('HMAC', await hmacKey(env), fromB64url(sig), enc.encode(body)))) return null;
+  const s = JSON.parse(new TextDecoder().decode(fromB64url(body)));
+  // Re-check the list on every request, so removing an email locks that person out right away.
+  return s.exp > Date.now() && allowed(env).includes(s.email) ? s : null;
+}
+
+// Who is asking: { email, name, picture } with Google, { email: 'shared' } with the old password, or null.
+async function currentUser(req, env) {
+  if (googleOn(env)) return readSession(env, req);
+  return (await passwordOk(req, env)) ? { email: 'shared', name: '' } : null;
+}
+
+async function passwordOk(req, env) {
   const m = /^Basic (.+)$/.exec(req.headers.get('authorization') || '');
   if (!m || !env.APP_PASSWORD?.trim()) return false;
   // Browsers send the credentials as UTF-8 (we ask for it in the realm); atob alone would mangle 한글 passwords.
@@ -21,10 +52,57 @@ async function authed(req, env) {
   }
   // Trim both sides: a pasted secret or typed password often carries a stray space/newline.
   const pass = raw.split(':').slice(1).join(':').trim();
-  env = { ...env, APP_PASSWORD: env.APP_PASSWORD.trim() };
-  const h = async (s) => new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
-  const [a, b] = await Promise.all([h(pass), h(env.APP_PASSWORD)]);
+  const h = async (s) => new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(s)));
+  const [a, b] = await Promise.all([h(pass), h(env.APP_PASSWORD.trim())]);
   return a.every((x, i) => x === b[i]);
+}
+
+const page = (title, body) =>
+  new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title>
+<style>body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#f5f6f8;color:#17181c;font:15px/1.6 -apple-system,"Pretendard",system-ui,sans-serif}
+@media(prefers-color-scheme:dark){body{background:#0f1012;color:#eceef2}.box{background:#18191c!important;border-color:#2a2c31!important}}
+.box{background:#fff;border:1px solid #e6e8ec;border-radius:18px;padding:36px 32px;max-width:360px;width:calc(100% - 32px);text-align:center}
+h1{margin:0 0 6px;font-size:26px;letter-spacing:-.6px}h1 span{color:#2f5bff}p{color:#7a7d86;margin:0 0 22px}
+a.g{display:flex;gap:10px;align-items:center;justify-content:center;padding:11px 16px;border:1px solid #dadce0;border-radius:12px;background:#fff;color:#1f1f1f;text-decoration:none;font-weight:600}
+a.s{display:inline-block;margin-top:14px;color:#7a7d86;font-size:13px}</style><div class="box">${body}</div>`,
+    { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+const GOOGLE_G = '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+const loginPage = (msg = '운영진 계정으로 들어와 주세요.') =>
+  page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login">${GOOGLE_G}Google 계정으로 로그인</a>`);
+
+// /auth/* routes. Returns a Response, or null if the path isn't one of them.
+async function authRoutes(req, env, url) {
+  const p = url.pathname;
+  if (!p.startsWith('/auth/') || !googleOn(env)) return null;
+  const redirect = `${url.origin}/auth/callback`;
+  const secure = 'HttpOnly; Secure; SameSite=Lax; Path=/';
+  if (p === '/auth/login') {
+    const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
+    const to = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID, redirect_uri: redirect, response_type: 'code', scope: 'openid email profile', state, prompt: 'select_account',
+    });
+    return new Response(null, { status: 302, headers: { location: to, 'set-cookie': `ref_state=${state}; Max-Age=600; ${secure}` } });
+  }
+  if (p === '/auth/callback') {
+    const state = url.searchParams.get('state');
+    if (!state || state !== cookie(req, 'ref_state')) return loginPage('로그인이 만료됐어요. 다시 시도해 주세요.');
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ code: url.searchParams.get('code') || '', client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET, redirect_uri: redirect, grant_type: 'authorization_code' }),
+    });
+    const tok = await r.json();
+    if (!r.ok || !tok.id_token) return loginPage('구글 로그인에 실패했어요. 다시 시도해 주세요.');
+    // The id_token came straight from Google's token endpoint over TLS, so its claims can be trusted as-is.
+    const c = JSON.parse(new TextDecoder().decode(fromB64url(tok.id_token.split('.')[1])));
+    const email = String(c.email || '').toLowerCase();
+    if (!c.email_verified || !allowed(env).includes(email))
+      return page('ref', `<h1>re<span>f</span></h1><p>${email.replace(/[<>&"]/g, '')} 계정은 아직 허용되지 않았어요.<br>운영자에게 추가를 요청해 주세요.</p><a class="g" href="/auth/login">다른 계정으로 로그인</a>`);
+    const session = await makeSession(env, { email, name: c.name || email, picture: c.picture || '' });
+    return new Response(null, { status: 302, headers: [['location', '/'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
+  }
+  if (p === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': `ref_session=; Max-Age=0; ${secure}` } });
+  return null;
 }
 
 const OFFLINE_AFTER = 15 * 60_000; // the PC re-registers every 5 min
@@ -80,7 +158,15 @@ export default {
       return json({ error: 'bad path' }, 400);
     }
 
-    if (!(await authed(req, env))) return new Response('로그인이 필요해요', { status: 401, headers: { 'www-authenticate': 'Basic realm="ref", charset="UTF-8"' } });
+    const authResp = await authRoutes(req, env, url);
+    if (authResp) return authResp;
+    const user = await currentUser(req, env);
+    if (!user) {
+      if (!googleOn(env)) return new Response('로그인이 필요해요', { status: 401, headers: { 'www-authenticate': 'Basic realm="ref", charset="UTF-8"' } });
+      return p.startsWith('/api/') ? json({ error: '로그인이 필요해요' }, 401) : loginPage();
+    }
+    const people = googleOn(env) ? allowed(env).length : 1;
+    const who = googleOn(env) ? user.email : undefined;
 
     try {
       if (m === 'GET' && p === '/api/status') return json({ analyzer: !!(await analyzer(env)) });
@@ -101,9 +187,10 @@ export default {
         }),
       ].filter(Boolean);
       const free = ytFree.length ? { yt: firstOf(ytFree) } : undefined;
-      if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits, free));
+      if (m === 'GET' && p === '/api/me') return json({ email: user.email, name: user.name, picture: user.picture || '', google: googleOn(env) });
+      if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits, free, who, people));
       if (m === 'GET' && p === '/api/search') {
-        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits, free);
+        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits, free, who, people);
         return json(r.body, r.status, r.failed ? { 'x-failed': r.failed.join(',') } : {});
       }
 
@@ -119,6 +206,7 @@ export default {
       if (m === 'POST' && p === '/api/save') {
         const item = newBoardItem(await req.json(), crypto.randomUUID().slice(0, 8));
         if (!item) return json({ error: 'bad item' }, 400);
+        item.by = user.name || '';
         const hit = (await all(env)).find((v) => v.src === item.src && v.ref === item.ref);
         if (hit) return json(hit);
         await put(env, item);
@@ -129,6 +217,7 @@ export default {
         const r = await proxy(req, env, p + url.search);
         if (!r.ok) return r;
         const item = await r.json();
+        item.by = user.name || '';
         await put(env, item);
         return json(item, 201);
       }
@@ -142,6 +231,7 @@ export default {
           if (typeof title === 'string') v.title = title;
           if (Array.isArray(tags)) v.tags = tags.map(String).map((t) => t.trim()).filter(Boolean);
           if (typeof memo === 'string') v.memo = memo;
+          v.editedBy = user.name || '';
           await put(env, v);
           return json(v);
         }

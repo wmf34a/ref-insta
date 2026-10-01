@@ -56,7 +56,12 @@ One-time setup (already done for `ref-insta`):
 ```sh
 npx wrangler d1 create ref-insta            # put the id in wrangler.jsonc
 npx wrangler d1 execute ref-insta --remote --file=schema.sql
-npx wrangler secret put APP_PASSWORD        # site password (any user name in the login prompt)
+npx wrangler secret put APP_PASSWORD        # shared site password — used only until Google sign-in is set up
+# Google sign-in (replaces the password): OAuth client (Web) with redirect URI https://<worker>/auth/callback
+npx wrangler secret put GOOGLE_CLIENT_ID
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put ALLOWED_EMAILS      # comma-separated Google accounts allowed in; each gets an equal share of the daily search budget
+npx wrangler secret put SESSION_SECRET      # any long random string (signs the 30-day login cookie)
 npx wrangler secret put FIRECRAWL_API_KEY
 npx wrangler secret put ANALYZER_TOKEN      # same value as "token" in .cloud.json
 npx wrangler secret put YOUTUBE_API_KEY     # optional: YouTube search with the PC off (YouTube Data API v3, 100 searches/day free)

@@ -159,7 +159,7 @@ async function costsCredits(store, src, q, qdr, free) {
 // "Used today" is measured from Firecrawl's real balance, so it stays right even across restarts/devices.
 export const COST_PER_SOURCE = 2; // measured: one platform, 20 results = 4 credits, so 10 results = 2
 let credits = null; // { at, v } — balance cached for a minute
-const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+export const kstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
 // people = how many share the budget; who = this person's email. Each person gets an equal share per day.
 const useKey = (who) => `use:${kstDay()}:${who}`;
 export async function creditStatus(store, readCredits, free, who, people = 1) {

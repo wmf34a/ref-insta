@@ -3,7 +3,7 @@
 // proxied to the analysis PC (server.mjs), which registers its Cloudflare Tunnel URL here via /api/analyzer.
 //
 // Secrets: APP_PASSWORD (site login), FIRECRAWL_API_KEY, ANALYZER_TOKEN (shared with the PC's .cloud.json).
-import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoardItem, fetchStats, youtubeApiSearch, firstOf, analysisKey, matchScenes, SOURCES, REF_OK } from './search.mjs';
+import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, kstDay, newBoardItem, fetchStats, youtubeApiSearch, firstOf, analysisKey, matchScenes, SOURCES, REF_OK } from './search.mjs';
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -193,6 +193,38 @@ async function telegram(env, text) {
   return r.ok;
 }
 
+// ---- Telegram commands ("최근 기록", "검색량") ----
+// Telegram posts the bot's incoming messages to /api/telegram (webhook). The secret header is derived from our own
+// secrets, and only the linked chat (the admin's) gets answers.
+const tgSecret = async (env) =>
+  [...new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(env.TELEGRAM_BOT_TOKEN + '|' + env.SESSION_SECRET)))].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
+const searchStore = (env) => ({
+  get: async (k) => { const r = await env.DB.prepare('SELECT v FROM searches WHERE k = ?').bind(k).first(); return r && JSON.parse(r.v); },
+  set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
+});
+const kstTime = (ms) => (ms ? new Date(ms + 9 * 3600e3).toISOString().slice(5, 16).replace('-', '.').replace('T', ' ') : '-');
+
+async function telegramReply(env, text) {
+  if (/최근|기록|접속|recent/i.test(text)) {
+    const rows = (await env.DB.prepare('SELECT email, name, at, seen, blocked FROM users ORDER BY COALESCE(seen, at) DESC LIMIT 15').all()).results;
+    if (!rows.length) return '아직 로그인한 사람이 없어요.';
+    return '🕘 최근 기록 (최근 접속 순)\n' + rows.map((u) =>
+      `• ${u.name || '이름 없음'} (${u.email})${u.blocked ? ' [차단]' : ''}\n   최근 접속 ${kstTime(u.seen || u.at)} · 첫 로그인 ${kstTime(u.at)}`).join('\n');
+  }
+  if (/검색량|크레딧|한도|credit/i.test(text)) {
+    const people = await peopleCount(env);
+    const c = await creditStatus(searchStore(env), () => firecrawlCredits(env.FIRECRAWL_API_KEY), { yt: true });
+    const used = (await env.DB.prepare('SELECT k, v FROM searches WHERE k LIKE ?').bind(`use:${kstDay()}:%`).all()).results
+      .map((r) => [r.k.split(':').slice(2).join(':'), JSON.parse(r.v).used]).sort((a, b) => b[1] - a[1]);
+    const share = Math.max(c.costOne, Math.floor(c.budget / Math.max(1, people)));
+    return `🔍 오늘 검색량\n팀 전체: ${c.left} / ${c.budget} 크레딧 남음 (${people}명이 1인당 ${share}씩)\n` +
+      `이번 달 남은 크레딧 ${c.remaining} · ${kstTime(Date.parse(c.resetAt)).slice(0, 5)} 다시 채워짐\n` +
+      (used.length ? '\n오늘 쓴 사람\n' + used.map(([e, n]) => `• ${e}: ${n} / ${share}`).join('\n') : '\n오늘은 아직 아무도 유료 검색을 안 했어요.') +
+      '\n\n(유튜브 쇼츠 검색은 무료라 여기 안 들어가요)';
+  }
+  return '쓸 수 있는 말:\n• 최근 기록 — 최근에 들어온 사람\n• 검색량 — 오늘 남은 검색량과 사람별 사용량';
+}
+
 const OFFLINE_AFTER = 15 * 60_000; // the PC re-registers every 5 min
 async function analyzer(env) {
   const row = await env.DB.prepare("SELECT v FROM kv WHERE k = 'analyzer'").first();
@@ -248,6 +280,14 @@ export default {
 
     // Install bits are fetched by the browser without cookies (manifest, icons, service worker): serve them to anyone.
     if (m === 'GET' && (p === '/manifest.json' || p === '/sw.js' || /^\/icons\/[\w-]+\.png$/.test(p))) return env.ASSETS.fetch(req);
+    // Telegram webhook: messages to the bot. Must answer 200 quickly; replies go out through sendMessage.
+    if (m === 'POST' && p === '/api/telegram') {
+      if (!env.TELEGRAM_BOT_TOKEN || req.headers.get('x-telegram-bot-api-secret-token') !== (await tgSecret(env))) return new Response('forbidden', { status: 403 });
+      const msg = (await req.json()).message;
+      const linked = (await env.DB.prepare("SELECT v FROM kv WHERE k = 'telegram_chat'").first())?.v;
+      if (msg?.text && String(msg.chat?.id) === linked) await telegram(env, await telegramReply(env, msg.text).catch((e) => '오류: ' + e.message));
+      return new Response('ok');
+    }
     const authResp = await authRoutes(req, env, url);
     if (authResp) return authResp;
     const user = await currentUser(req, env);
@@ -260,10 +300,7 @@ export default {
 
     try {
       if (m === 'GET' && p === '/api/status') return json({ analyzer: !!(await analyzer(env)) });
-      const store = {
-        get: async (k) => { const r = await env.DB.prepare('SELECT v FROM searches WHERE k = ?').bind(k).first(); return r && JSON.parse(r.v); },
-        set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
-      };
+      const store = searchStore(env);
       const readCredits = () => firecrawlCredits(env.FIRECRAWL_API_KEY);
       // YouTube without credits: the YouTube Data API (works with the PC off; 100 searches/day), then the PC's
       // yt-dlp if it's on. Only if both fail does YouTube go through Firecrawl.
@@ -278,6 +315,9 @@ export default {
       ].filter(Boolean);
       const free = ytFree.length ? { yt: firstOf(ytFree) } : undefined;
       const admin = googleOn(env) && (await isAdmin(env, user.email));
+      // Last visit, for "최근 기록": written at most every 10 minutes per person (page loads call /api/me).
+      if (m === 'GET' && p === '/api/me' && googleOn(env))
+        await env.DB.prepare('UPDATE users SET seen = ? WHERE email = ? AND (seen IS NULL OR seen < ?)').bind(Date.now(), user.email, Date.now() - 600_000).run();
       if (m === 'GET' && p === '/api/me') return json({ email: user.email, name: user.name, picture: user.picture || '', google: googleOn(env), admin });
       if (p.startsWith('/api/admin/')) {
         if (!admin) return json({ error: '관리자만 쓸 수 있어요' }, 403);
@@ -295,11 +335,16 @@ export default {
         if (m === 'POST' && p === '/api/admin/telegram') {
           // Link the chat that last messaged the bot, then send a test message there.
           if (!env.TELEGRAM_BOT_TOKEN) return json({ error: 'TELEGRAM_BOT_TOKEN 이 아직 없어요' }, 400);
-          const u = await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getUpdates`)).json();
+          const tg = (method, body) => fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).then((r) => r.json());
+          await tg('deleteWebhook'); // getUpdates only works without a webhook
+          const u = await tg('getUpdates');
           const chat = (u.result || []).map((x) => x.message?.chat?.id).filter(Boolean).pop();
           if (!chat) return json({ error: '봇에게 먼저 아무 메시지나 보내 주세요' }, 400);
           await env.DB.prepare("INSERT OR REPLACE INTO kv (k, v) VALUES ('telegram_chat', ?)").bind(String(chat)).run();
-          const ok = await telegram(env, '✅ ref 알림이 연결됐어요. 새로운 사람이 처음 로그인하면 여기로 알려드릴게요.');
+          // From now on Telegram delivers the bot's messages here, so "최근 기록" / "검색량" get answers.
+          const hook = await tg('setWebhook', { url: `${url.origin}/api/telegram`, secret_token: await tgSecret(env), allowed_updates: ['message'] });
+          const ok = await telegram(env, '✅ ref 알림이 연결됐어요. 새로운 사람이 처음 로그인하면 여기로 알려드릴게요.\n\n여기에 "최근 기록" 또는 "검색량"이라고 보내면 바로 알려드려요.');
+          if (!hook.ok) return json({ ok, error: '알림은 연결됐지만 명령 받기 설정에 실패했어요: ' + hook.description });
           return json({ ok });
         }
         return json({ error: 'not found' }, 404);

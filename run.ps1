@@ -20,6 +20,8 @@ function Need($cmd, $id) {
 Need node OpenJS.NodeJS.LTS
 Need yt-dlp yt-dlp.yt-dlp
 Need ffmpeg Gyan.FFmpeg
+# YouTube changes often and old yt-dlp versions get "HTTP Error 403": keep it current on every start.
+try { winget upgrade -e --id yt-dlp.yt-dlp --silent --accept-source-agreements --accept-package-agreements | Out-Null } catch {}
 # Cloud mode (.cloud.json present): this PC does the analysis for the Cloudflare site through a tunnel.
 if (Test-Path (Join-Path $PSScriptRoot '.cloud.json')) { Need cloudflared Cloudflare.cloudflared }
 

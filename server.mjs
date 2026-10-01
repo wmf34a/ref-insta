@@ -133,6 +133,8 @@ function downloadError(msg, link) {
   if (/login|log in|cookies|rate.?limit|empty media|not available|private/i.test(msg))
     return `${site}이 로그인을 요구해서 이 영상은 받을 수 없어요.`;
   if (/no video|There is no video|Unsupported URL|image/i.test(msg)) return '사진 게시물이라 분석할 영상이 없어요.';
+  if (/HTTP Error 403|Sign in to confirm|not a bot/i.test(msg))
+    return `${site === '이 사이트' ? '유튜브' : site}가 다운로드를 막았어요. 분석 PC에서 ref 를 다시 실행하면(yt-dlp 자동 업데이트) 대부분 해결돼요.`;
   return `영상을 받지 못했어요. (${msg.slice(0, 160)})`;
 }
 
@@ -326,8 +328,9 @@ function startTunnel() {
       setInterval(register, 5 * 60_000); // heartbeat: the Worker treats us as offline after 15 min of silence
     }
   });
+  // Take the tunnel down with us, whichever way we're stopped (Ctrl+C, kill, closing the terminal).
   process.on('exit', () => child.kill());
-  process.on('SIGINT', () => process.exit());
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => process.exit());
 }
 
 http

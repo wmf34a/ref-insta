@@ -18,6 +18,8 @@ need() { # need <command> <brew formula>
 need node node
 need yt-dlp yt-dlp
 need ffmpeg ffmpeg
+# YouTube changes often and old yt-dlp versions get "HTTP Error 403": keep it current on every start.
+if command -v brew >/dev/null; then brew upgrade yt-dlp >/dev/null 2>&1 || true; else yt-dlp -U >/dev/null 2>&1 || true; fi
 # Cloud mode (.cloud.json present): this PC does the analysis for the Cloudflare site through a tunnel.
 [ -f .cloud.json ] && need cloudflared cloudflared
 

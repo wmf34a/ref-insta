@@ -86,7 +86,13 @@ const loginPage = (msg = '운영진 계정으로 들어와 주세요.', ua = '')
       <script>document.getElementById('ext').href='kakaotalk://web/openExternal?url='+encodeURIComponent(location.origin)</script>`);
   if (/NAVER\(|Instagram|FBAN|FBAV|Line\//i.test(ua))
     return page('ref 로그인', `<h1>re<span>f</span></h1><p>앱 안의 브라우저에서는 구글 로그인이 막혀 있어요.<br>메뉴에서 <b>외부 브라우저로 열기</b>를 눌러 주세요.</p>`);
-  return page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login">${GOOGLE_G}Google 계정으로 로그인</a>`);
+  // replace(): the login page leaves no history entry, so "back" from the app can't land on it.
+  // On load / when restored from the back-forward cache, already signed in -> straight into the app.
+  return page('ref 로그인', `<h1>re<span>f</span></h1><p>${msg}</p><a class="g" href="/auth/login" onclick="location.replace(this.href);return false">${GOOGLE_G}Google 계정으로 로그인</a>
+    <script>
+      const check = () => fetch('/api/me', { cache: 'no-store', credentials: 'same-origin' }).then((r) => { if (r.ok) location.replace('/'); }).catch(() => {});
+      check(); addEventListener('pageshow', (e) => { if (e.persisted) check(); });
+    </script>`);
 };
 
 // /auth/* routes. Returns a Response, or null if the path isn't one of them.
@@ -124,7 +130,7 @@ async function authRoutes(req, env, url) {
       await telegram(env, `🔔 ref 새 로그인\n${c.name || ''} (${email})\n모르는 사람이면 관리 화면에서 차단하세요: ${url.origin}/#admin`).catch(() => {});
     }
     const session = await makeSession(env, { email, name: c.name || email, picture: c.picture || '' });
-    return new Response(null, { status: 302, headers: [['location', '/'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
+    return new Response(null, { status: 302, headers: [['location', '/'], ['cache-control', 'no-store'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
   }
   if (p === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': `ref_session=; Max-Age=0; ${secure}` } });
   return null;

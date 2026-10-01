@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, handleSearch, newBoardItem } from './search.mjs';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, handleSearch, newBoardItem, PER_SOURCE } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -41,7 +41,7 @@ async function webSearch(query, qdr) {
   const key = firecrawlKey();
   if (key) return firecrawlSearch(key, query, qdr);
   if (WIN) throw new Error('Firecrawl API 키가 없어요. run 으로 실행하거나 .firecrawl-key 파일에 키를 넣어 주세요.');
-  return (await runJson('firecrawl', ['search', query, '--limit', '40', '--json', ...(tbs ? ['--tbs', tbs] : [])])).data?.web || [];
+  return (await runJson('firecrawl', ['search', query, '--limit', String(PER_SOURCE), '--json', ...(tbs ? ['--tbs', tbs] : [])])).data?.web || [];
 }
 
 // YouTube captions as [startSec, endSec, text].
@@ -194,6 +194,17 @@ function searchScenes(q) {
   return out.sort((x, y) => y.matches.length - x.matches.length);
 }
 
+// Saved search results on disk (cache/search/<sha1 of key>.json), so they survive restarts.
+const SEARCH_DIR = path.join(ROOT, 'cache', 'search');
+const searchFile = (key) => path.join(SEARCH_DIR, crypto.createHash('sha1').update(key).digest('hex') + '.json');
+const searchStore = {
+  get: async (key) => (fs.existsSync(searchFile(key)) ? JSON.parse(fs.readFileSync(searchFile(key), 'utf8')) : null),
+  set: async (key, v) => {
+    fs.mkdirSync(SEARCH_DIR, { recursive: true });
+    fs.writeFileSync(searchFile(key), JSON.stringify(v));
+  },
+};
+
 const load = () => (fs.existsSync(DATA) ? JSON.parse(fs.readFileSync(DATA, 'utf8')) : []);
 const save = (list) => fs.writeFileSync(DATA, JSON.stringify(list, null, 2));
 
@@ -277,7 +288,7 @@ http
       if (req.method === 'GET' && p === '/api/videos') return json(res, 200, load());
       if (req.method === 'GET' && p === '/api/status') return json(res, 200, { analyzer: true });
       if (req.method === 'GET' && p === '/api/search') {
-        const r = await handleSearch(url.searchParams, webSearch);
+        const r = await handleSearch(url.searchParams, webSearch, searchStore);
         if (r.failed) res.setHeader('x-failed', r.failed.join(','));
         return json(res, r.status, r.body);
       }

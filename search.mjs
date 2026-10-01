@@ -98,14 +98,34 @@ export async function searchSource(webSearch, src, q, qdr) {
 export const inRange = (range) => (v) => range.min == null || (v.date != null && v.date >= range.min && v.date <= range.max);
 
 // "all": every source in parallel, interleaved so one platform doesn't bury the rest. A failing source is skipped.
-export async function searchAll(webSearch, q, range) {
-  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => cached(`${s}:${range.qdr}:${q}`, () => searchSource(webSearch, s, q, range.qdr))));
+// Results per platform per search. Firecrawl bills by results (measured: 40 results = 8 credits), so 20 halves it.
+export const PER_SOURCE = 20;
+
+// Saved searches: the same query+platform+period reuses the stored results instead of spending credits again.
+// store = { get(key) -> {at, list} | null, set(key, {at, list}) } — a folder on the PC, a D1 table on Cloudflare.
+// ponytail: 3-day freshness is a guess; shorten if results feel stale, lengthen to save more credits.
+const SAVED_FOR = 3 * 86_400_000;
+async function saved(store, key, fn) {
+  if (!store) return fn();
+  const hit = await store.get(key).catch(() => null);
+  if (hit && Date.now() - hit.at < SAVED_FOR) return hit.list;
+  const list = await fn();
+  await store.set(key, { at: Date.now(), list }).catch(() => {});
+  return list;
+}
+const getList = (webSearch, store, src, q, qdr) => {
+  const key = `${src}:${qdr}:${q.toLowerCase()}`;
+  return cached(key, () => saved(store, key, () => searchSource(webSearch, src, q, qdr)));
+};
+
+export async function searchAll(webSearch, store, q, range) {
+  const settled = await Promise.allSettled(Object.keys(SOURCES).map((s) => getList(webSearch, store, s, q, range.qdr)));
   if (settled.every((r) => r.status === 'rejected')) throw settled[0].reason; // e.g. Firecrawl 429 — show it instead of "0 results"
   if (range.min != null) await withYtDates(settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : [])));
   const lists = settled.map((r) => (r.status === 'fulfilled' ? r.value.filter(inRange(range)) : []));
   const failed = Object.keys(SOURCES).filter((_, i) => settled[i].status === 'rejected');
   const out = [];
-  for (let i = 0; i < 40; i++) for (const l of lists) if (l[i]) out.push(l[i]);
+  for (let i = 0; i < PER_SOURCE; i++) for (const l of lists) if (l[i]) out.push(l[i]);
   return { out, failed };
 }
 
@@ -115,7 +135,7 @@ export async function firecrawlSearch(key, query, qdr) {
   const r = await fetch('https://api.firecrawl.dev/v2/search', {
     method: 'POST',
     headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ query, limit: 40, ...(qdr && { tbs: `qdr:${qdr}` }) }),
+    body: JSON.stringify({ query, limit: PER_SOURCE, ...(qdr && { tbs: `qdr:${qdr}` }) }),
   });
   if (r.status === 429) throw new Error('검색 한도를 넘었어요. 1분쯤 뒤에 다시 해보세요.');
   const j = await r.json();
@@ -124,17 +144,17 @@ export async function firecrawlSearch(key, query, qdr) {
 }
 
 // GET /api/search, as { status, body, failed } so both runtimes can wrap it in their own response type.
-export async function handleSearch(params, webSearch) {
+export async function handleSearch(params, webSearch, store) {
   const q = (params.get('q') || '').trim();
   if (!q) return { status: 400, body: { error: '검색어가 비었어요' } };
   const src = params.get('src');
   const range = dateRange(params);
   if (src === 'all') {
-    const { out, failed } = await searchAll(webSearch, q, range);
+    const { out, failed } = await searchAll(webSearch, store, q, range);
     return { status: 200, body: out, failed };
   }
   if (!SOURCES[src]) return { status: 400, body: { error: 'unknown source' } };
-  const list = await cached(`${src}:${range.qdr}:${q}`, () => searchSource(webSearch, src, q, range.qdr));
+  const list = await getList(webSearch, store, src, q, range.qdr);
   if (range.min != null) await withYtDates(list);
   return { status: 200, body: list.filter(inRange(range)) };
 }

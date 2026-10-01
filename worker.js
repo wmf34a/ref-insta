@@ -67,7 +67,11 @@ export default {
     try {
       if (m === 'GET' && p === '/api/status') return json({ analyzer: !!(await analyzer(env)) });
       if (m === 'GET' && p === '/api/search') {
-        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr));
+        const store = {
+          get: async (k) => { const r = await env.DB.prepare('SELECT v FROM searches WHERE k = ?').bind(k).first(); return r && JSON.parse(r.v); },
+          set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
+        };
+        const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store);
         return json(r.body, r.status, r.failed ? { 'x-failed': r.failed.join(',') } : {});
       }
 

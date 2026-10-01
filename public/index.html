@@ -58,6 +58,7 @@
   #guide h3 { margin:16px 0 6px; font-size:14px; }
   #guide ul { margin:0; padding-left:18px; line-height:1.7; color:var(--fg); }
   #guide .close, #admin .close, #install .close { float:right; }
+  #exitAsk { width:min(320px, 86vw); height:auto; padding:20px 22px; border-radius:16px; }
   #install { width:min(460px, 94vw); height:auto; max-height:90vh; overflow:auto; padding:22px 24px; }
   .ihead { display:flex; gap:12px; align-items:center; margin:4px 0 14px; }
   .ihead img { width:52px; height:52px; border-radius:12px; }
@@ -315,6 +316,11 @@
   <div id="userList"></div>
   <h3>텔레그램 알림</h3>
   <div id="tgState"></div>
+</dialog>
+
+<dialog id="exitAsk">
+  <p style="margin:4px 0 16px;font-size:16px;font-weight:700">ref를 종료할까요?</p>
+  <div class="row" style="justify-content:flex-end"><button class="ghost" id="exitNo" type="button">취소</button><button id="exitYes" type="button">종료</button></div>
 </dialog>
 
 <dialog id="dlg">
@@ -733,11 +739,17 @@ $('#q').oninput = () => { if (tab === 'board') render(); };
 // The phone/browser back button steps back inside the app (closes the video, leaves the scrapbook)
 // instead of leaving the site — which used to land on the old login page.
 let fromBack = false;
-if (history.state?.layer) history.replaceState(null, ''); // reloaded with a video open: that entry is stale now
+if (history.state?.layer && history.state.layer !== 'guard') history.replaceState(null, ''); // reloaded with a video open: stale
+// Installed app: back on the home screen asks before closing. A "guard" entry sits on top of the first page; backing
+// past it shows the question. It's pushed on a tap because Chrome skips history entries added without one.
+const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const guard = () => { if (installed && !history.state?.layer) history.pushState({ layer: 'guard' }, ''); };
+addEventListener('pointerdown', guard, { once: true });
 addEventListener('popstate', () => {
   fromBack = true;
   if ($('#dlg').open) $('#dlg').close();
   else if (tab === 'board' && history.state?.layer !== 'board') { tab = 'search'; $('#q').value = lastQuery; render(); }
+  else if (installed && !history.state?.layer) { document.querySelectorAll('dialog[open]').forEach((d) => d.close()); $('#exitAsk').showModal(); }
   fromBack = false;
 });
 document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
@@ -777,6 +789,9 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => {
 });
 $('#from').onchange = $('#to').onchange = () => { if (lastQuery && $('#from').value) search(lastQuery); };
 $('#batchBtn').onclick = analyzeAll;
+$('#exitNo').onclick = () => { $('#exitAsk').close(); guard(); };   // stay: put the guard back (this tap allows it)
+$('#exitYes').onclick = () => { $('#exitAsk').close(); history.back(); }; // leave: step past the first page
+$('#exitAsk').addEventListener('cancel', () => guard()); // Esc / tapping back while asked = stay
 $('#guideNav').onclick = $('#creditMini').onclick = () => $('#guide').showModal();
 $('#guideClose').onclick = () => $('#guide').close();
 $('#guide').onclick = (e) => { if (e.target === $('#guide')) $('#guide').close(); };

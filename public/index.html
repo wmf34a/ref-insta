@@ -43,34 +43,43 @@
   #drop { position:fixed; inset:0; z-index:20; display:grid; place-items:center; background:rgba(59,91,253,.15); border:3px dashed var(--accent); font-size:22px; font-weight:700; pointer-events:none; }
   dialog { width:min(1320px, 96vw); height:min(900px, 92vh); padding:0; border:0; border-radius:16px; background:var(--card); color:var(--fg); overflow:hidden; }
   dialog::backdrop { background:rgba(0,0,0,.7); }
-  .detail { display:grid; grid-template-columns:400px minmax(0,1fr); height:100%; }
-  .left { display:flex; flex-direction:column; overflow:auto; border-right:1px solid var(--line); }
+  /* Detail: header bar (title + actions) over [video | timeline/similar/memo]. */
+  .detail { display:grid; grid-template-rows:auto minmax(0,1fr); height:100%; }
+  .dhead { display:flex; gap:16px; align-items:flex-start; justify-content:space-between; padding:14px 18px; border-bottom:1px solid var(--line); }
+  .dinfo { min-width:0; }
+  .dinfo h3 { margin:4px 0 0; font-size:16px; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .dact { flex:none; }
+  .dact .x { font-size:18px; padding:5px 11px; }
+  .dbody { display:grid; grid-template-columns:minmax(260px, 380px) minmax(0,1fr); min-height:0; }
+  .dbody > *, .pane { min-width:0; } /* let the filmstrip scroll instead of widening the dialog */
   #player { background:#000; display:grid; place-items:center; min-height:320px; }
-  #player video { width:100%; max-height:62vh; display:block; }
-  #player iframe { width:100%; height:62vh; border:0; display:block; }
-  .side { padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
-  .side h3 { margin:0; font-size:16px; line-height:1.35; }
+  #player video { width:100%; max-height:100%; display:block; }
+  #player iframe { width:100%; height:100%; min-height:520px; border:0; display:block; }
+  .side { display:flex; flex-direction:column; gap:10px; }
   .side input, .side textarea { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:inherit; font:inherit; }
-  .side textarea { min-height:80px; resize:vertical; }
+  .side textarea { min-height:140px; resize:vertical; }
   .side label { font-size:12px; color:var(--mute); }
   .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .row .btn, .row button { padding:7px 12px; font-size:13px; }
   .right { display:flex; flex-direction:column; min-height:0; }
-  .tabs { display:flex; gap:22px; padding:16px 20px 0; border-bottom:1px solid var(--line); align-items:flex-end; }
-  .tabs button { background:none; color:var(--mute); border-radius:0; padding:6px 0 10px; border-bottom:2px solid transparent; font-size:15px; }
-  .tabs button.on { color:var(--fg); border-color:var(--fg); }
-  .tabs .x { margin-left:auto; font-size:20px; }
-  .pane { flex:1; overflow:auto; padding:16px 20px; }
+  .tabs { display:flex; gap:6px; padding:12px 18px; border-bottom:1px solid var(--line); }
+  .tabs button { background:none; color:var(--mute); padding:6px 14px; font-size:14px; border:1px solid transparent; }
+  .tabs button.on { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  .pane { flex:1; overflow:auto; padding:14px 18px; }
   .note { color:var(--mute); font-size:12px; margin-bottom:10px; }
-  .scene { display:grid; grid-template-columns:88px 92px minmax(0,1fr); gap:14px; padding:10px 8px; border-bottom:1px solid var(--line); cursor:pointer; align-items:start; }
-  .scene:hover { background:var(--bg); }
-  .scene.on { background:color-mix(in srgb, var(--accent) 12%, transparent); box-shadow:inset 3px 0 var(--accent); }
-  .scene img { width:88px; border-radius:6px; display:block; }
-  .scene time { color:var(--accent); font-variant-numeric:tabular-nums; font-size:13px; }
-  .scene .say { font-size:14px; }
-  .scene .say.none { color:var(--mute); }
-  .scene .ocr { color:var(--mute); font-size:12px; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-  .scene .ocr::before { content:'화면 글자 · '; font-weight:600; }
+  /* Timeline: a filmstrip of shots, then the words (spoken + on screen) in time order. */
+  .strip { display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; margin-bottom:6px; border-bottom:1px solid var(--line); }
+  .shot { flex:none; width:64px; background:none; padding:0; border-radius:6px; color:var(--mute); font-size:11px; font-weight:500; text-align:center; }
+  .shot img { width:64px; aspect-ratio:9/16; object-fit:cover; border-radius:6px; display:block; border:2px solid transparent; }
+  .shot.on img { border-color:var(--accent); }
+  .shot.on { color:var(--accent); }
+  .line { display:grid; grid-template-columns:52px minmax(0,1fr); gap:10px; padding:9px 6px; border-radius:8px; cursor:pointer; }
+  .line:hover { background:var(--bg); }
+  .line.on { background:color-mix(in srgb, var(--accent) 10%, transparent); }
+  .line time { color:var(--accent); font-variant-numeric:tabular-nums; font-size:13px; padding-top:1px; }
+  .line .say { font-size:14px; }
+  .line .ocr { color:var(--mute); font-size:12px; margin-top:3px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .line .ocr b { font-weight:600; margin-right:4px; }
   #simGrid { columns:4 180px; column-gap:10px; }
   .muted { color:var(--mute); font-size:13px; padding:8px 0; }
   .spin { display:inline-block; width:14px; height:14px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:r 1s linear infinite; vertical-align:-2px; margin-right:6px; }
@@ -92,19 +101,19 @@
   .hit time { color:var(--accent); font-variant-numeric:tabular-nums; flex:none; }
   .hit .k { color:var(--mute); flex:none; }
   .hit mark { background:color-mix(in srgb, var(--accent) 25%, transparent); color:inherit; border-radius:2px; }
-  #cat { padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; }
+  .grp select { padding:5px 10px; border-radius:999px; border:1px solid var(--line); background:var(--card); color:var(--fg); font:inherit; }
   @media (max-width:860px) {
     dialog { width:100vw; max-width:100vw; height:100dvh; max-height:100dvh; border-radius:0; overflow:auto; }
-    .detail { grid-template-columns:1fr; height:auto; }
-    .left { border:0; overflow:visible; }
+    .detail { height:auto; }
+    .dhead { flex-direction:column; gap:8px; padding:12px 14px; position:sticky; top:0; background:var(--card); z-index:3; }
+    .dact { width:100%; }
+    .dact .x { margin-left:auto; }
+    .dbody { grid-template-columns:1fr; }
     #player { min-height:0; }
-    #player iframe, #player video { height:auto; max-height:58dvh; aspect-ratio:9/16; width:auto; max-width:100%; margin:0 auto; }
+    #player iframe, #player video { height:auto; min-height:0; max-height:58dvh; aspect-ratio:9/16; width:auto; max-width:100%; margin:0 auto; }
     .right { min-height:auto; }
-    .tabs { position:sticky; top:0; background:var(--card); z-index:2; padding:10px 16px 0; }
-    .pane { overflow:visible; padding:12px 16px; }
-    .scene { grid-template-columns:64px minmax(0,1fr); gap:10px; }
-    .scene img { width:64px; grid-row:span 2; }
-    .scene time { font-size:12px; }
+    .tabs { padding:10px 14px; }
+    .pane { overflow:visible; padding:12px 14px; }
     #simGrid { columns:2; }
   }
   @media (max-width:600px) {
@@ -128,55 +137,57 @@
 <body>
 <header>
   <b>ref</b>
-  <div class="seg" id="modes"><button type="button" class="on" data-mode="web">썸네일·카피</button><button type="button" data-mode="scene">장면·대사</button></div>
+  <div class="seg" id="modes"><button type="button" class="on" data-mode="web">키워드</button><button type="button" data-mode="scene">영상 속 말</button></div>
   <form id="f"><input id="q" type="search" placeholder="'감성적인 카페 인테리어' 처럼 찾고 싶은 느낌을 입력" autofocus></form>
   <label class="btn ghost" id="upBtn" hidden>업로드<input id="file" type="file" accept="video/*" multiple hidden></label>
 </header>
 <nav>
   <button class="chip on" data-tab="search">레퍼런스 찾기</button>
-  <button class="chip" data-tab="board">내 보드 <span id="cnt"></span></button>
+  <button class="chip" data-tab="board">스크랩북 <span id="cnt"></span></button>
   <span class="grp" id="srcs"><span class="lbl">플랫폼</span></span>
-  <span class="grp" id="periods"><span class="lbl">게시 일시</span><button class="chip" data-p="">전체</button><button class="chip" data-p="w">최근 7일</button><button class="chip" data-p="m">최근 30일</button><button class="chip" data-p="90d">최근 90일</button><button class="chip" data-p="6m">최근 6개월</button><button class="chip" data-p="y">최근 1년</button><button class="chip" data-p="custom">기간 설정…</button>
+  <span class="grp" id="periods"><span class="lbl">올린 날짜</span><button class="chip" data-p="">전체</button><button class="chip" data-p="w">최근 7일</button><button class="chip" data-p="m">최근 30일</button><button class="chip" data-p="90d">최근 90일</button><button class="chip" data-p="6m">최근 6개월</button><button class="chip" data-p="y">최근 1년</button><button class="chip" data-p="custom">직접 고르기</button>
     <span id="customRange" hidden><input type="date" id="from"> ~ <input type="date" id="to"></span></span>
-  <span class="grp" id="cats"><span class="lbl">카테고리</span><select id="cat"><option value="">전체</option></select></span>
+  <span class="grp" id="cats"><span class="lbl">주제</span><select id="topic"><option value="">전체</option></select><span class="lbl">형식</span><select id="fmt"><option value="">전체</option></select></span>
   <span style="width:8px"></span>
   <span id="tags"></span>
 </nav>
-<div id="offline" hidden>분석 PC가 꺼져 있어요. 검색·보드는 그대로 되고, 스크립트·장면 분석과 장면·대사 검색은 PC에서 ref 를 켜면 돼요.</div>
-<div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>검색 결과 대사까지 분석</button></div>
+<div id="offline" hidden>분석 PC가 꺼져 있어요. 검색·스크랩북은 그대로 되고, 타임라인 분석과 영상 속 말 검색은 PC에서 ref 를 켜면 돼요.</div>
+<div id="statusRow"><div id="status"></div><button class="ghost" id="batchBtn" hidden>결과 전부 분석해서 말 검색에 넣기</button></div>
 <main id="grid"></main>
 <div id="empty" hidden></div>
-<div id="drop" hidden>여기에 놓으면 보드에 업로드</div>
+<div id="drop" hidden>여기에 놓으면 스크랩북에 올라가요</div>
 
 <dialog id="dlg">
   <div class="detail">
-    <div class="left">
-      <div id="player"></div>
-      <div class="side">
-        <div class="row">
-          <a class="btn ghost" id="dlThumb" download hidden>썸네일</a>
-          <a class="btn ghost" id="dlVideo" download hidden>영상</a>
-          <a class="btn ghost" id="outLink" target="_blank" rel="noopener">원본 보기</a>
-          <button id="saveBtn">보드에 저장</button>
-        </div>
-        <h3 id="dTitle"></h3>
-        <div class="muted" id="dSub" style="padding:0"></div>
-        <div id="edit" class="side" style="padding:0">
-          <label>제목<input id="dt"></label>
-          <label>태그 (쉼표로 구분)<input id="dg" placeholder="카페, 인테리어, 릴스"></label>
-          <label>메모<textarea id="dm" placeholder="참고 포인트, 카피…"></textarea></label>
-          <div class="row"><button id="saveEdit">저장</button><button class="ghost" id="del">삭제</button></div>
-        </div>
+    <div class="dhead">
+      <div class="dinfo"><div class="muted" id="dSub" style="padding:0"></div><h3 id="dTitle"></h3></div>
+      <div class="row dact">
+        <button id="saveBtn">스크랩</button>
+        <a class="btn ghost" id="outLink" target="_blank" rel="noopener">원본</a>
+        <a class="btn ghost" id="dlThumb" download hidden>썸네일 받기</a>
+        <a class="btn ghost" id="dlVideo" download hidden>영상 받기</a>
+        <button class="ghost x" id="close" aria-label="닫기">✕</button>
       </div>
     </div>
-    <div class="right">
-      <div class="tabs">
-        <button data-pane="scenes" class="on">스크립트·장면</button>
-        <button data-pane="similar">유사한 미디어</button>
-        <button class="x" id="close" aria-label="닫기">✕</button>
+    <div class="dbody">
+      <div id="player"></div>
+      <div class="right">
+        <div class="tabs">
+          <button data-pane="scenes" class="on">타임라인</button>
+          <button data-pane="similar">비슷한 영상</button>
+          <button data-pane="memo" id="memoTab" hidden>메모</button>
+        </div>
+        <div class="pane" id="scenes"></div>
+        <div class="pane" id="similar" hidden><div id="simGrid"></div></div>
+        <div class="pane" id="memo" hidden>
+          <div id="edit" class="side">
+            <label>제목<input id="dt"></label>
+            <label>태그 (쉼표로 구분)<input id="dg" placeholder="카페, 인테리어, 릴스"></label>
+            <label>메모<textarea id="dm" placeholder="참고할 점, 따라 할 구성, 카피 아이디어…"></textarea></label>
+            <div class="row"><button id="saveEdit">저장</button><button class="ghost" id="del">스크랩 취소</button></div>
+          </div>
+        </div>
       </div>
-      <div class="pane" id="scenes"></div>
-      <div class="pane" id="similar" hidden><div id="simGrid"></div></div>
     </div>
   </div>
 </dialog>
@@ -202,8 +213,12 @@ const ICON = {
 };
 const pf = (k) => `${ICON[k] || ICON.file}<span>${SRC[k]?.name || '내 영상'}</span>`;
 
-const CATS = ['뷰티', '패션', '식품', '건강기능식품·이너뷰티', '다이어트·프로틴', '외식', '가전·디지털', '유아·출산', '생활용품', '리빙·인테리어', '주방용품', '펫', '스포츠·레저', '교육', '여행·숙박', '의료 서비스', '뷰티·웰니스 서비스', '금융·보험', '게임', '자동차·모빌리티 용품', '오피스·문구', 'IT·SaaS', '프랜차이즈·창업', '부동산', '통신·인터넷'];
-$('#cat').insertAdjacentHTML('beforeend', CATS.map((c) => `<option>${c}</option>`).join(''));
+// Our own two filters: what it's about (주제) and how it's made (형식). Both are added to the search words.
+const TOPICS = ['메이크업', '스킨케어', '패션·코디', '레시피', '카페·디저트', '맛집', '육아', '인테리어·살림', '운동·다이어트', '건강', '여행', '반려동물', '테크·가전', '공부·자기계발', '재테크', '게임', '자동차', '음악·댄스', '유머·밈', '일상'];
+const FORMATS = ['언박싱', '리뷰', '비교', '꿀팁', '튜토리얼', '비포 애프터', '브이로그', '챌린지', '인터뷰', 'ASMR', '랭킹', '광고'];
+$('#topic').insertAdjacentHTML('beforeend', TOPICS.map((c) => `<option>${c}</option>`).join(''));
+$('#fmt').insertAdjacentHTML('beforeend', FORMATS.map((c) => `<option>${c}</option>`).join(''));
+const extraWords = () => [$('#topic').value, $('#fmt').value].filter(Boolean).join(' ').replace(/·/g, ' ');
 let mode = 'web', src = 'all', period = '', tab = 'search', results = [], board = [], activeTag = null, current = null, lastQuery = '';
 
 const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => '&#' + c.charCodeAt(0) + ';');
@@ -231,7 +246,7 @@ function card(v, i) {
   return `<div class="card" data-i="${i}">${media}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div>${date}</div></div>`;
 }
 
-// 장면·대사 result: the matching scene's frame, then each matching line with its time (tap one to jump there).
+// 영상 속 말 result: the matching scene's frame, then each matching line with its time (tap one to jump there).
 function sceneCard(v, i) {
   const S = SRC[v.src];
   const words = lastQuery.toLowerCase().split(/\s+/).filter(Boolean);
@@ -268,10 +283,10 @@ function render() {
   document.querySelectorAll('#grid video').forEach((el) => io.observe(el));
   $('#empty').hidden = list.length > 0 || $('#status').textContent !== '';
   $('#empty').textContent = tab === 'search' && mode === 'scene'
-    ? (lastQuery ? '분석해 둔 영상 중에 일치하는 대사·화면 글자가 없어요. [썸네일·카피]로 검색한 뒤 [검색 결과 대사까지 분석]을 누르면 검색 대상이 늘어나요.' : '분석해 둔 영상들의 대사와 화면 글자에서 찾아요.')
+    ? (lastQuery ? '분석해 둔 영상 중에 그 말이 나오는 게 없어요. [키워드]로 검색한 뒤 [결과 전부 분석해서 말 검색에 넣기]를 누르면 찾을 수 있는 영상이 늘어나요.' : '분석해 둔 영상에서 나온 말과 화면 속 글자로 찾아요.')
     : tab === 'search'
     ? (lastQuery ? '결과가 없어요. 다른 표현으로 찾아보세요.' : '위에 찾고 싶은 느낌을 적고 Enter. 예) 감성적인 카페 인테리어, 스킨케어 언박싱, 자취방 브이로그')
-    : '보드가 비었어요. 검색 결과에서 [보드에 저장]하거나 영상을 끌어다 놓으세요.';
+    : '스크랩북이 비었어요. 영상을 열어 [스크랩]하거나 내 영상을 끌어다 놓으세요.';
 }
 
 async function search(q) {
@@ -284,13 +299,13 @@ async function search(q) {
   $('#status').textContent = `${srcName()}에서 "${q}" 찾는 중…`;
   render();
   const range = period === 'custom' ? `&from=${$('#from').value}&to=${$('#to').value}` : '';
-  const want = src + period + range + $('#cat').value;
+  const want = src + period + range + extraWords();
   try {
-    const cat = $('#cat').value.replace(/·/g, ' ');
-    const r = await fetch(`/api/search?src=${src}&period=${period}${range}&q=` + encodeURIComponent(cat ? `${q} ${cat}` : q));
+    const extra = extraWords();
+    const r = await fetch(`/api/search?src=${src}&period=${period}${range}&q=` + encodeURIComponent(extra ? `${q} ${extra}` : q));
     const d = await r.json();
     if (!r.ok) throw new Error(d.error);
-    if (q !== lastQuery || mode !== 'web' || want !== src + period + range + $('#cat').value) return; // a newer search started meanwhile
+    if (q !== lastQuery || mode !== 'web' || want !== src + period + range + extraWords()) return; // a newer search started meanwhile
     results = d;
     const failed = (r.headers.get('x-failed') || '').split(',').filter(Boolean).map((k) => SRC[k].name);
     const noDate = period && src === 'all' ? ' · 핀터레스트는 날짜를 알 수 없어서 기간 필터에서 빠져요' : '';
@@ -309,11 +324,11 @@ async function searchScenes(q) {
   if (q !== lastQuery || mode !== 'scene') return;
   if (!r.ok) { $('#status').textContent = '검색 실패: ' + d.error; return render(); }
   results = d;
-  $('#status').textContent = `대사·화면 글자에 "${q}"가 나오는 영상 ${d.length}개`;
+  $('#status').textContent = `"${q}"라는 말이나 글자가 나오는 영상 ${d.length}개`;
   render();
 }
 
-// Analyse every video in the current results (2 at a time) so 장면·대사 search can find them.
+// Analyse every video in the current results (2 at a time) so 영상 속 말 search can find them.
 let batchSeq = 0;
 async function analyzeAll() {
   const seq = ++batchSeq;
@@ -330,7 +345,7 @@ async function analyzeAll() {
     }
   }));
   $('#batchBtn').disabled = false;
-  $('#batchBtn').textContent = seq === batchSeq ? `분석 완료 ${done}개 — [장면·대사]에서 검색해 보세요` : '검색 결과 대사까지 분석';
+  $('#batchBtn').textContent = seq === batchSeq ? `분석 완료 ${done}개 — [영상 속 말]에서 찾아보세요` : '결과 전부 분석해서 말 검색에 넣기';
 }
 
 async function loadBoard() { board = await (await fetch('/api/videos')).json(); render(); }
@@ -354,7 +369,7 @@ function analyzeUrl(v) {
 async function loadAnalysis(v, seq, at) {
   analysis = null;
   const box = $('#scenes');
-  box.innerHTML = '<div class="muted"><span class="spin"></span>영상을 받아서 장면을 나누고 대사·화면 글자를 읽는 중… (처음 한 번 10~60초)</div>';
+  box.innerHTML = '<div class="muted"><span class="spin"></span>영상을 컷으로 나누고 말과 화면 글자를 읽는 중… (처음 한 번 10~60초)</div>';
   try {
     const r = await fetch(analyzeUrl(v));
     const d = await r.json();
@@ -368,20 +383,20 @@ async function loadAnalysis(v, seq, at) {
     if (at != null) vid.addEventListener('loadedmetadata', () => { vid.currentTime = at + 0.01; }, { once: true });
     $('#dlVideo').href = d.video; $('#dlVideo').hidden = false;
     if (d.scenes[0]) { $('#dlThumb').href = d.scenes[0].img; $('#dlThumb').hidden = false; }
-    // Each spoken line goes under the scene it starts in, so a long line isn't repeated across quick cuts.
+    // Each spoken line goes under the shot it starts in, so a long line isn't repeated across quick cuts.
     const sceneOf = (t) => Math.max(0, d.scenes.findLastIndex((s) => s.start <= t + 0.05));
     const said = d.scenes.map(() => []);
     d.script.forEach(([a, , t]) => said[sceneOf(a)]?.push(t));
-    const how = { captions: '유튜브 자막', whisper: 'AI 음성 인식(Whisper)으로 자동 생성' }[d.scriptSource] || '대사를 찾지 못했어요';
-    box.innerHTML = `<div class="note">장면 ${d.scenes.length}개 · 대사: ${how} · 화면 글자: 이미지 인식(OCR)</div>` +
-      d.scenes.map((s, i) => {
-        const say = said[i].join(' ');
-        return `<div class="scene" data-s="${s.start}" data-i="${i}">
-          <img src="${s.img}" loading="lazy" alt="">
-          <time>${fmt(s.start)}–${fmt(s.end)}</time>
-          <div><div class="say ${say ? '' : 'none'}">${say ? esc(say) : '대사 없음'}</div>${s.text ? `<div class="ocr">${esc(s.text)}</div>` : ''}</div>
-        </div>`;
-      }).join('');
+    const how = { captions: '유튜브 자막', whisper: 'AI 음성 인식' }[d.scriptSource] || '말소리 없음';
+    const strip = d.scenes.map((s, i) => `<button class="shot" data-s="${s.start}" data-i="${i}"><img src="${s.img}" loading="lazy" alt="">${fmt(s.start)}</button>`).join('');
+    const lines = d.scenes.map((s, i) => {
+      const say = said[i].join(' ');
+      if (!say && !s.text) return '';
+      return `<div class="line" data-s="${s.start}" data-i="${i}"><time>${fmt(s.start)}</time>
+        <div>${say ? `<div class="say">${esc(say)}</div>` : ''}${s.text ? `<div class="ocr"><b>화면</b>${esc(s.text)}</div>` : ''}</div></div>`;
+    }).join('');
+    box.innerHTML = `<div class="note">컷 ${d.scenes.length}개 · 말: ${how} · 화면 글자: 이미지 인식</div><div class="strip">${strip}</div>` +
+      (lines || '<div class="muted">말소리도 화면 글자도 없는 영상이에요.</div>');
   } catch (e) {
     if (seq === openSeq) box.innerHTML = `<div class="muted">분석하지 못했어요: ${esc(e.message)}</div>`;
   }
@@ -390,7 +405,9 @@ async function loadAnalysis(v, seq, at) {
 function highlight(t) {
   if (!analysis) return;
   const i = analysis.scenes.findIndex((s) => t >= s.start && t < s.end);
-  document.querySelectorAll('.scene').forEach((el) => el.classList.toggle('on', Number(el.dataset.i) === i));
+  document.querySelectorAll('.shot, .line').forEach((el) => el.classList.toggle('on', Number(el.dataset.i) === i));
+  const shot = document.querySelector('.shot.on');
+  if (shot) shot.parentElement.scrollLeft = shot.offsetLeft - shot.parentElement.clientWidth / 2;
 }
 
 async function loadSimilar(v, seq) {
@@ -413,11 +430,12 @@ function showPane(name) {
   document.querySelectorAll('[data-pane]').forEach((b) => b.classList.toggle('on', b.dataset.pane === name));
   $('#scenes').hidden = name !== 'scenes';
   $('#similar').hidden = name !== 'similar';
+  $('#memo').hidden = name !== 'memo';
   if (name === 'similar' && !$('#simGrid').dataset.for) { $('#simGrid').dataset.for = '1'; loadSimilar(current, openSeq); }
 }
 
 function open(v, at) {
-  if (v.boardId) v = board.find((b) => b.id === v.boardId) || v; // 장면·대사 hit on one of my uploads
+  if (v.boardId) v = board.find((b) => b.id === v.boardId) || v; // a 영상 속 말 hit on one of my uploads
   const seq = ++openSeq;
   const S = SRC[v.src];
   const saved = v.id ? v : board.find((b) => b.src === v.src && b.ref === v.ref);
@@ -431,7 +449,7 @@ function open(v, at) {
   $('#outLink').hidden = !S;
   $('#outLink').href = v.url || '#';
   $('#dlThumb').hidden = $('#dlVideo').hidden = true;
-  $('#edit').hidden = !saved;
+  $('#memoTab').hidden = !saved;
   if (saved) { $('#dt').value = saved.title; $('#dg').value = saved.tags.join(', '); $('#dm').value = saved.memo; }
   delete $('#simGrid').dataset.for;
   $('#simGrid').innerHTML = '';
@@ -472,7 +490,7 @@ document.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => {
   }
   if (lastQuery) search(lastQuery); else render();
 });
-$('#cat').onchange = () => { if (lastQuery) search(lastQuery); };
+$('#topic').onchange = $('#fmt').onchange = () => { if (lastQuery) search(lastQuery); };
 $('#tags').onclick = (e) => { const t = e.target.dataset.t; if (t) { activeTag = activeTag === t ? null : t; render(); } };
 $('#grid').onclick = (e) => {
   const c = e.target.closest('.card');
@@ -519,7 +537,8 @@ $('#saveBtn').onclick = async () => {
   if (!r.ok) return alert(item.error);
   await loadBoard();
   current = item;
-  $('#saveBtn').hidden = true; $('#edit').hidden = false;
+  $('#saveBtn').hidden = true; $('#memoTab').hidden = false;
+  showPane('memo');
   $('#dt').value = item.title; $('#dg').value = item.tags.join(', '); $('#dm').value = item.memo;
 };
 $('#saveEdit').onclick = async () => {
@@ -529,7 +548,7 @@ $('#saveEdit').onclick = async () => {
   $('#dlg').close();
 };
 $('#del').onclick = async () => {
-  if (!confirm('보드에서 삭제할까요?')) return;
+  if (!confirm('스크랩을 취소할까요?')) return;
   await fetch('/api/videos/' + current.id, { method: 'DELETE' });
   $('#dlg').close();
   loadBoard();

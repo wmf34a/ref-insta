@@ -1,5 +1,5 @@
 // Cloudflare Worker: the always-on half of ref. Serves the page, search (Firecrawl) and the board (D1).
-// Analysis, 장면·대사 search, uploads and their media need ffmpeg/yt-dlp/Whisper, so those requests are
+// Analysis, "영상 속 말" search, uploads and their media need ffmpeg/yt-dlp/Whisper, so those requests are
 // proxied to the analysis PC (server.mjs), which registers its Cloudflare Tunnel URL here via /api/analyzer.
 //
 // Secrets: APP_PASSWORD (site login), FIRECRAWL_API_KEY, ANALYZER_TOKEN (shared with the PC's .cloud.json).

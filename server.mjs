@@ -170,7 +170,7 @@ async function analyze({ key, link, file, ytId, meta = {} }) {
   fs.writeFileSync(done, JSON.stringify(result));
   return result;
 }
-// "장면·대사" search: look through every analysis on disk — spoken lines and on-screen text — for all the words.
+// "영상 속 말" search: look through every analysis on disk — spoken lines and on-screen text — for all the words.
 // ponytail: reads every analysis.json per query; fine for hundreds of videos, add an index if it grows to thousands.
 function searchScenes(q) {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);

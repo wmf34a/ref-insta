@@ -9,15 +9,22 @@ const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
 
 // ---- Sign-in ----
-// With Google configured (GOOGLE_CLIENT_ID/SECRET, ALLOWED_EMAILS, SESSION_SECRET) people sign in with Google and only
-// listed emails get in; a signed cookie keeps them in for 30 days. Without it, the old shared password (APP_PASSWORD).
+// With Google configured (GOOGLE_CLIENT_ID/SECRET, SESSION_SECRET) people sign in with Google; a signed cookie keeps
+// them in for 30 days. Who may enter:
+//   ALLOWED_EMAILS set  -> only those accounts.
+//   not set             -> any Google account (the link is only shared with the team); BLOCKED_EMAILS shuts people out.
+// Everyone who signs in is recorded in the users table. Without Google config: the old shared password (APP_PASSWORD).
 const SESSION_DAYS = 30;
 const enc = new TextEncoder();
 const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 const hmacKey = (env) => crypto.subtle.importKey('raw', enc.encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
-const googleOn = (env) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SECRET && env.ALLOWED_EMAILS);
-const allowed = (env) => env.ALLOWED_EMAILS.split(/[\s,]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+const googleOn = (env) => !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.SESSION_SECRET);
+const emails = (list) => (list || '').split(/[\s,]+/).map((e) => e.trim().toLowerCase()).filter(Boolean);
+const mayEnter = (env, email) => (env.ALLOWED_EMAILS ? emails(env.ALLOWED_EMAILS).includes(email) : !emails(env.BLOCKED_EMAILS).includes(email));
+// How many people share the daily search budget: the allowlist, or everyone who has signed in so far.
+const peopleCount = async (env) =>
+  env.ALLOWED_EMAILS ? emails(env.ALLOWED_EMAILS).length : (await env.DB.prepare('SELECT count(*) AS n FROM users').first())?.n || 1;
 const cookie = (req, name) => new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(req.headers.get('cookie') || '')?.[1];
 
 async function makeSession(env, user) {
@@ -30,8 +37,8 @@ async function readSession(env, req) {
   if (!body || !sig) return null;
   if (!(await crypto.subtle.verify('HMAC', await hmacKey(env), fromB64url(sig), enc.encode(body)))) return null;
   const s = JSON.parse(new TextDecoder().decode(fromB64url(body)));
-  // Re-check the list on every request, so removing an email locks that person out right away.
-  return s.exp > Date.now() && allowed(env).includes(s.email) ? s : null;
+  // Re-check on every request, so removing/blocking an email locks that person out right away.
+  return s.exp > Date.now() && mayEnter(env, s.email) ? s : null;
 }
 
 // Who is asking: { email, name, picture } with Google, { email: 'shared' } with the old password, or null.
@@ -96,8 +103,9 @@ async function authRoutes(req, env, url) {
     // The id_token came straight from Google's token endpoint over TLS, so its claims can be trusted as-is.
     const c = JSON.parse(new TextDecoder().decode(fromB64url(tok.id_token.split('.')[1])));
     const email = String(c.email || '').toLowerCase();
-    if (!c.email_verified || !allowed(env).includes(email))
-      return page('ref', `<h1>re<span>f</span></h1><p>${email.replace(/[<>&"]/g, '')} 계정은 아직 허용되지 않았어요.<br>운영자에게 추가를 요청해 주세요.</p><a class="g" href="/auth/login">다른 계정으로 로그인</a>`);
+    if (!c.email_verified || !mayEnter(env, email))
+      return page('ref', `<h1>re<span>f</span></h1><p>${email.replace(/[<>&"]/g, '')} 계정은 들어올 수 없어요.<br>운영자에게 문의해 주세요.</p><a class="g" href="/auth/login">다른 계정으로 로그인</a>`);
+    await env.DB.prepare('INSERT OR IGNORE INTO users (email, name, at) VALUES (?, ?, ?)').bind(email, String(c.name || ''), Date.now()).run();
     const session = await makeSession(env, { email, name: c.name || email, picture: c.picture || '' });
     return new Response(null, { status: 302, headers: [['location', '/'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
   }
@@ -165,7 +173,7 @@ export default {
       if (!googleOn(env)) return new Response('로그인이 필요해요', { status: 401, headers: { 'www-authenticate': 'Basic realm="ref", charset="UTF-8"' } });
       return p.startsWith('/api/') ? json({ error: '로그인이 필요해요' }, 401) : loginPage();
     }
-    const people = googleOn(env) ? allowed(env).length : 1;
+    const people = googleOn(env) ? await peopleCount(env) : 1;
     const who = googleOn(env) ? user.email : undefined;
 
     try {

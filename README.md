@@ -60,7 +60,9 @@ npx wrangler secret put APP_PASSWORD        # shared site password — used only
 # Google sign-in (replaces the password): OAuth client (Web) with redirect URI https://<worker>/auth/callback
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
-npx wrangler secret put ALLOWED_EMAILS      # comma-separated Google accounts allowed in; each gets an equal share of the daily search budget
+npx wrangler secret put ALLOWED_EMAILS      # optional: only these Google accounts. Without it any Google account gets in
+npx wrangler secret put BLOCKED_EMAILS      # optional (no allowlist): accounts to shut out
+# everyone who signs in is recorded in D1 `users`; the daily search budget is split equally among them
 npx wrangler secret put SESSION_SECRET      # any long random string (signs the 30-day login cookie)
 npx wrangler secret put FIRECRAWL_API_KEY
 npx wrangler secret put ANALYZER_TOKEN      # same value as "token" in .cloud.json

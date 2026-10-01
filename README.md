@@ -4,6 +4,11 @@ Reference finder for short-form content: search YouTube Shorts, Instagram, TikTo
 
 Zero npm dependencies — `node server.mjs`, then open http://localhost:5173.
 
+## Check
+
+`node test.mjs` — offline self-check of search ranking/dates/budget, YouTube API parsing, sign-in, admin,
+per-account scrapbook and Telegram commands (fakes for Google/Telegram/Firecrawl, in-memory SQLite for D1).
+
 ## What it needs
 
 | Tool | Used for | Required? |

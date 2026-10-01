@@ -741,10 +741,11 @@ $('#q').oninput = () => { if (tab === 'board') render(); };
 let fromBack = false;
 if (history.state?.layer && history.state.layer !== 'guard') history.replaceState(null, ''); // reloaded with a video open: stale
 // Installed app: back on the home screen asks before closing. A "guard" entry sits on top of the first page; backing
-// past it shows the question. It's pushed on a tap because Chrome skips history entries added without one.
+// past it shows the question. It's pushed on a tap because Chrome skips history entries added without user
+// activation — and a touch only counts once the finger lifts, so listen to click (not pointerdown), on every tap.
 const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const guard = () => { if (installed && !history.state?.layer) history.pushState({ layer: 'guard' }, ''); };
-addEventListener('pointerdown', guard, { once: true });
+addEventListener('click', guard, true);
 addEventListener('popstate', () => {
   fromBack = true;
   if ($('#dlg').open) $('#dlg').close();

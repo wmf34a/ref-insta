@@ -38,7 +38,9 @@ async function readSession(env, req) {
   if (!(await crypto.subtle.verify('HMAC', await hmacKey(env), fromB64url(sig), enc.encode(body)))) return null;
   const s = JSON.parse(new TextDecoder().decode(fromB64url(body)));
   // Re-check on every request, so removing/blocking an email locks that person out right away.
-  return s.exp > Date.now() && mayEnter(env, s.email) ? s : null;
+  if (!(s.exp > Date.now() && mayEnter(env, s.email))) return null;
+  const row = await env.DB.prepare('SELECT blocked FROM users WHERE email = ?').bind(s.email).first();
+  return row?.blocked ? null : s;
 }
 
 // Who is asking: { email, name, picture } with Google, { email: 'shared' } with the old password, or null.
@@ -105,12 +107,34 @@ async function authRoutes(req, env, url) {
     const email = String(c.email || '').toLowerCase();
     if (!c.email_verified || !mayEnter(env, email))
       return page('ref', `<h1>re<span>f</span></h1><p>${email.replace(/[<>&"]/g, '')} 계정은 들어올 수 없어요.<br>운영자에게 문의해 주세요.</p><a class="g" href="/auth/login">다른 계정으로 로그인</a>`);
-    await env.DB.prepare('INSERT OR IGNORE INTO users (email, name, at) VALUES (?, ?, ?)').bind(email, String(c.name || ''), Date.now()).run();
+    const known = await env.DB.prepare('SELECT blocked FROM users WHERE email = ?').bind(email).first();
+    if (known?.blocked) return page('ref', `<h1>re<span>f</span></h1><p>이 계정은 이용이 중지됐어요.<br>운영자에게 문의해 주세요.</p>`);
+    if (!known) {
+      await env.DB.prepare('INSERT OR IGNORE INTO users (email, name, at) VALUES (?, ?, ?)').bind(email, String(c.name || ''), Date.now()).run();
+      await telegram(env, `🔔 ref 새 로그인\n${c.name || ''} (${email})\n모르는 사람이면 관리 화면에서 차단하세요: ${url.origin}/#admin`).catch(() => {});
+    }
     const session = await makeSession(env, { email, name: c.name || email, picture: c.picture || '' });
     return new Response(null, { status: 302, headers: [['location', '/'], ['set-cookie', `ref_session=${session}; Max-Age=${SESSION_DAYS * 86400}; ${secure}`], ['set-cookie', `ref_state=; Max-Age=0; ${secure}`]] });
   }
   if (p === '/auth/logout') return new Response(null, { status: 302, headers: { location: '/', 'set-cookie': `ref_session=; Max-Age=0; ${secure}` } });
   return null;
+}
+
+// ---- Admin + Telegram alerts ----
+// Admins: ADMIN_EMAILS, or else whoever signed in first (the owner, who shares the link).
+async function isAdmin(env, email) {
+  if (env.ADMIN_EMAILS) return emails(env.ADMIN_EMAILS).includes(email);
+  const first = await env.DB.prepare('SELECT email FROM users ORDER BY at LIMIT 1').first();
+  return first?.email === email;
+}
+// TELEGRAM_BOT_TOKEN (from @BotFather) + the chat to post to (found by /api/admin/telegram after you message the bot).
+async function telegram(env, text) {
+  const chat = env.TELEGRAM_BOT_TOKEN && (await env.DB.prepare("SELECT v FROM kv WHERE k = 'telegram_chat'").first())?.v;
+  if (!chat) return false;
+  const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chat_id: chat, text }),
+  });
+  return r.ok;
 }
 
 const OFFLINE_AFTER = 15 * 60_000; // the PC re-registers every 5 min
@@ -195,7 +219,33 @@ export default {
         }),
       ].filter(Boolean);
       const free = ytFree.length ? { yt: firstOf(ytFree) } : undefined;
-      if (m === 'GET' && p === '/api/me') return json({ email: user.email, name: user.name, picture: user.picture || '', google: googleOn(env) });
+      const admin = googleOn(env) && (await isAdmin(env, user.email));
+      if (m === 'GET' && p === '/api/me') return json({ email: user.email, name: user.name, picture: user.picture || '', google: googleOn(env), admin });
+      if (p.startsWith('/api/admin/')) {
+        if (!admin) return json({ error: '관리자만 쓸 수 있어요' }, 403);
+        if (m === 'GET' && p === '/api/admin/users') {
+          const rows = (await env.DB.prepare('SELECT email, name, at, blocked FROM users ORDER BY at').all()).results;
+          const chat = await env.DB.prepare("SELECT v FROM kv WHERE k = 'telegram_chat'").first();
+          return json({ users: rows, me: user.email, telegram: { token: !!env.TELEGRAM_BOT_TOKEN, linked: !!chat } });
+        }
+        if (m === 'POST' && p === '/api/admin/block') {
+          const { email, blocked } = await req.json();
+          if (email === user.email) return json({ error: '자기 자신은 차단할 수 없어요' }, 400);
+          await env.DB.prepare('UPDATE users SET blocked = ? WHERE email = ?').bind(blocked ? 1 : 0, String(email)).run();
+          return json({ ok: true });
+        }
+        if (m === 'POST' && p === '/api/admin/telegram') {
+          // Link the chat that last messaged the bot, then send a test message there.
+          if (!env.TELEGRAM_BOT_TOKEN) return json({ error: 'TELEGRAM_BOT_TOKEN 이 아직 없어요' }, 400);
+          const u = await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getUpdates`)).json();
+          const chat = (u.result || []).map((x) => x.message?.chat?.id).filter(Boolean).pop();
+          if (!chat) return json({ error: '봇에게 먼저 아무 메시지나 보내 주세요' }, 400);
+          await env.DB.prepare("INSERT OR REPLACE INTO kv (k, v) VALUES ('telegram_chat', ?)").bind(String(chat)).run();
+          const ok = await telegram(env, '✅ ref 알림이 연결됐어요. 새로운 사람이 처음 로그인하면 여기로 알려드릴게요.');
+          return json({ ok });
+        }
+        return json({ error: 'not found' }, 404);
+      }
       if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits, free, who, people));
       if (m === 'GET' && p === '/api/search') {
         const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits, free, who, people);
@@ -210,12 +260,14 @@ export default {
       }
 
       // Board (D1)
-      if (m === 'GET' && p === '/api/videos') return json(await all(env));
+      // Each account has its own scrapbook (owner = email). The shared-password mode keeps one common board.
+      const mine = (v) => !googleOn(env) || v.owner === user.email;
+      if (m === 'GET' && p === '/api/videos') return json((await all(env)).filter(mine));
       if (m === 'POST' && p === '/api/save') {
         const item = newBoardItem(await req.json(), crypto.randomUUID().slice(0, 8));
         if (!item) return json({ error: 'bad item' }, 400);
-        item.by = user.name || '';
-        const hit = (await all(env)).find((v) => v.src === item.src && v.ref === item.ref);
+        item.owner = user.email;
+        const hit = (await all(env)).find((v) => mine(v) && v.src === item.src && v.ref === item.ref);
         if (hit) return json(hit);
         await put(env, item);
         return json(item, 201);
@@ -225,7 +277,7 @@ export default {
         const r = await proxy(req, env, p + url.search);
         if (!r.ok) return r;
         const item = await r.json();
-        item.by = user.name || '';
+        item.owner = user.email;
         await put(env, item);
         return json(item, 201);
       }
@@ -234,12 +286,12 @@ export default {
         const row = await env.DB.prepare('SELECT data FROM items WHERE id = ?').bind(id).first();
         if (!row) return json({ error: 'not found' }, 404);
         const v = JSON.parse(row.data);
+        if (!mine(v)) return json({ error: 'not found' }, 404);
         if (m === 'PATCH') {
           const { title, tags, memo } = await req.json();
           if (typeof title === 'string') v.title = title;
           if (Array.isArray(tags)) v.tags = tags.map(String).map((t) => t.trim()).filter(Boolean);
           if (typeof memo === 'string') v.memo = memo;
-          v.editedBy = user.name || '';
           await put(env, v);
           return json(v);
         }

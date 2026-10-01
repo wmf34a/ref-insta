@@ -63,6 +63,9 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 npx wrangler secret put ALLOWED_EMAILS      # optional: only these Google accounts. Without it any Google account gets in
 npx wrangler secret put BLOCKED_EMAILS      # optional (no allowlist): accounts to shut out
 # everyone who signs in is recorded in D1 `users`; the daily search budget is split equally among them
+npx wrangler secret put ADMIN_EMAILS        # optional: admins (default: whoever signed in first). Admins get the 관리 screen
+npx wrangler secret put TELEGRAM_BOT_TOKEN  # optional: alert on every new sign-in (link the chat from 관리 → 텔레그램 연결)
+# each account has its own scrapbook
 npx wrangler secret put SESSION_SECRET      # any long random string (signs the 30-day login cookie)
 npx wrangler secret put FIRECRAWL_API_KEY
 npx wrangler secret put ANALYZER_TOKEN      # same value as "token" in .cloud.json

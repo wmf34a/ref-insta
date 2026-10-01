@@ -51,7 +51,13 @@
   #guide h2 { margin:0 0 10px; font-size:18px; }
   #guide h3 { margin:16px 0 6px; font-size:14px; }
   #guide ul { margin:0; padding-left:18px; line-height:1.7; color:var(--fg); }
-  #guide .close { float:right; }
+  #guide .close, #admin .close { float:right; }
+  #admin { width:min(640px, 94vw); height:auto; max-height:88vh; overflow:auto; padding:22px 24px; }
+  #admin h2 { margin:0 0 10px; font-size:18px; } #admin h3 { margin:18px 0 6px; font-size:14px; }
+  .urow { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+  .urow .who { flex:1; min-width:0; } .urow .who small { color:var(--mute); display:block; }
+  .urow.off .who { opacity:.5; text-decoration:line-through; }
+  #tgState ol { margin:6px 0; padding-left:18px; line-height:1.7; }
   .pcstate { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--mute); padding:0 4px; }
   .pcstate i { width:8px; height:8px; border-radius:50%; background:#9a9ea8; }
   .pcstate.on i { background:#22c55e; }
@@ -206,8 +212,9 @@
   <div class="logo">re<span>f</span></div>
   <button class="navbtn on" data-tab="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>레퍼런스 찾기</button>
   <button class="navbtn" data-tab="board"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>스크랩북 <span id="cnt"></span></button>
+  <button class="navbtn" id="guideNav" type="button"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>이용 안내</button>
+  <button class="navbtn" id="adminNav" type="button" hidden><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>관리</button>
   <div class="navfoot">
-    <button class="guidebtn" id="guideBtn" type="button">ⓘ 이용 안내</button>
     <div class="credit" id="credit" hidden></div>
     <div class="pcstate" id="pcstate"><i></i><span>분석 PC 확인 중…</span></div>
     <div class="me" id="me" hidden></div>
@@ -269,6 +276,16 @@
     <li>받은 영상·썸네일은 참고용으로만 쓰고 다른 곳에 올리지 말아 주세요</li>
     <li>처음 보는 영상의 타임라인 분석은 운영 PC가 켜져 있을 때만 돼요</li>
   </ul>
+</dialog>
+
+<dialog id="admin">
+  <button class="ghost close" id="adminClose" type="button">닫기</button>
+  <h2>관리</h2>
+  <h3>로그인한 사람</h3>
+  <p style="color:var(--mute);margin:0 0 8px">모르는 사람이 있으면 [차단]을 누르세요. 바로 못 들어와요.</p>
+  <div id="userList"></div>
+  <h3>텔레그램 알림</h3>
+  <div id="tgState"></div>
 </dialog>
 
 <dialog id="dlg">
@@ -356,7 +373,7 @@ function card(v, i) {
     ? `<div class="media">${badge}<img src="${esc(S.thumb(v.ref))}" loading="lazy" alt=""></div>`
     : `<div class="media embed">${badge}<div class="cap">${esc(v.title)}</div><iframe src="${esc(S.embed(v.ref))}" loading="lazy" scrolling="no"></iframe></div>`;
   const sub = [v.channel && '@' + v.channel, ...(v.tags || []).map((t) => '#' + t)].filter(Boolean).map(esc).join(' · ');
-  const date = (v.date ? `<div class="date">${fmtDate(v.date)}</div>` : '') + (tab === 'board' && v.by ? `<div class="by">${esc(v.by)} 님이 스크랩</div>` : '');
+  const date = v.date ? `<div class="date">${fmtDate(v.date)}</div>` : '';
   return `<div class="card" data-i="${i}">${media}<div class="meta"><div class="t">${esc(v.title)}</div><div class="sub">${sub}</div>${date}<div class="stats">${statsHtml(v)}</div></div></div>`;
 }
 
@@ -709,7 +726,7 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.onclick = () => {
 });
 $('#from').onchange = $('#to').onchange = () => { if (lastQuery && $('#from').value) search(lastQuery); };
 $('#batchBtn').onclick = analyzeAll;
-$('#guideBtn').onclick = $('#creditMini').onclick = () => $('#guide').showModal(); // phones: tap the allowance line
+$('#guideNav').onclick = $('#creditMini').onclick = () => $('#guide').showModal();
 $('#guideClose').onclick = () => $('#guide').close();
 $('#guide').onclick = (e) => { if (e.target === $('#guide')) $('#guide').close(); };
 // First visit on this browser: show the guide once.
@@ -790,8 +807,37 @@ fetch('/api/status').then((r) => r.json()).then((s) => {
   $('#pcstate span').textContent = s.analyzer ? '분석 PC 연결됨' : '분석 PC 꺼짐';
 }).catch(() => {});
 loadCredits();
+async function loadAdmin() {
+  const d = await (await fetch('/api/admin/users')).json();
+  if (d.error) { $('#userList').textContent = d.error; return; }
+  $('#userList').innerHTML = d.users.map((u) => `<div class="urow ${u.blocked ? 'off' : ''}"><div class="who">${esc(u.name || '')} ${u.email === d.me ? '(나)' : ''}<small>${esc(u.email)} · 첫 로그인 ${fmtDate(u.at)}</small></div>
+    ${u.email === d.me ? '' : `<button class="${u.blocked ? '' : 'ghost'}" data-block="${esc(u.email)}" data-to="${u.blocked ? 0 : 1}">${u.blocked ? '차단 해제' : '차단'}</button>`}</div>`).join('');
+  $('#tgState').innerHTML = d.telegram.linked
+    ? '연결돼 있어요. 새로운 사람이 처음 로그인하면 텔레그램으로 알려드려요. <button class="ghost" id="tgLink">다시 연결</button>'
+    : `<ol><li>텔레그램에서 <b>@BotFather</b> 에게 <b>/newbot</b> 을 보내 봇을 만들고, 받은 토큰을 복사해요</li>
+       <li>터미널에서 <code>npx wrangler secret put TELEGRAM_BOT_TOKEN</code> 으로 토큰을 넣어요 ${d.telegram.token ? '— <b>완료</b>' : ''}</li>
+       <li>새로 만든 봇에게 아무 메시지나 하나 보내요</li><li>아래 버튼을 누르면 테스트 메시지가 와요</li></ol>
+       <button id="tgLink" ${d.telegram.token ? '' : 'disabled'}>텔레그램 연결</button>`;
+  $('#tgLink').onclick = async () => {
+    const r = await (await fetch('/api/admin/telegram', { method: 'POST' })).json();
+    alert(r.error || (r.ok ? '연결됐어요. 텔레그램에 테스트 메시지가 갔어요.' : '연결은 했는데 메시지를 못 보냈어요.'));
+    loadAdmin();
+  };
+}
+$('#userList').onclick = async (e) => {
+  const b = e.target.closest('[data-block]');
+  if (!b) return;
+  if (b.dataset.to === '1' && !confirm(`${b.dataset.block} 를 차단할까요?`)) return;
+  await fetch('/api/admin/block', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: b.dataset.block, blocked: b.dataset.to === '1' }) });
+  loadAdmin();
+};
+$('#adminNav').onclick = () => { $('#admin').showModal(); loadAdmin(); };
+$('#adminClose').onclick = () => $('#admin').close();
+
 fetch('/api/me').then((r) => (r.ok ? r.json() : null)).then((u) => {
   if (!u?.google) return;
+  $('#adminNav').hidden = !u.admin;
+  if (u.admin && location.hash === '#admin') $('#adminNav').click(); // link in the Telegram alert
   $('#me').hidden = false;
   $('#me').innerHTML = `${u.picture ? `<img src="${esc(u.picture)}" alt="" referrerpolicy="no-referrer">` : ''}<span class="nm">${esc(u.name || u.email)}</span><a href="/auth/logout">로그아웃</a>`;
 }).catch(() => {});

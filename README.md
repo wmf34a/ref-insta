@@ -25,6 +25,13 @@ curl -L -o ~/.cache/whisper/ggml-small-q5_1.bin https://huggingface.co/ggerganov
 node server.mjs
 ```
 
+### Mac as an always-on analysis PC
+
+```sh
+./scripts/mac-service.sh install     # start at login, restart if it dies, no idle sleep, daily yt-dlp update
+./scripts/mac-service.sh status|logs|uninstall
+```
+
 ## Windows
 
 In `cmd`, from the repo folder:

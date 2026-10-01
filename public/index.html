@@ -140,6 +140,9 @@
   .tabs button.on { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 40%, transparent); background:color-mix(in srgb, var(--accent) 8%, transparent); }
   .pane { flex:1; overflow:auto; padding:14px 18px; }
   .note { color:var(--mute); font-size:12px; margin-bottom:10px; }
+  .copyrow { display:flex; gap:6px; flex-wrap:wrap; margin:-4px 0 10px; }
+  .copyrow button { padding:5px 10px; font-size:12px; }
+  #toast { position:fixed; left:50%; bottom:calc(84px + env(safe-area-inset-bottom, 0px)); transform:translateX(-50%); background:#17181c; color:#fff; padding:9px 16px; border-radius:999px; font-size:13px; z-index:50; box-shadow:0 4px 16px rgba(0,0,0,.25); }
   /* Timeline: a filmstrip of shots, then the words (spoken + on screen) in time order. */
   .strip { display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; margin-bottom:6px; border-bottom:1px solid var(--line); }
   .shot { flex:none; width:64px; background:none; padding:0; border-radius:6px; color:var(--mute); font-size:11px; font-weight:500; text-align:center; }
@@ -642,7 +645,17 @@ async function loadAnalysis(v, seq, at) {
       return `<div class="line" data-s="${s.start}" data-i="${i}"><time>${fmt(s.start)}</time>
         <div>${say ? `<div class="say">${esc(say)}</div>` : ''}${s.text ? `<div class="ocr"><b>화면</b>${esc(s.text)}</div>` : ''}</div></div>`;
     }).join('');
-    box.innerHTML = `<div class="note">컷 ${d.scenes.length}개 · 말: ${how} · 화면 글자: 이미지 인식</div><div class="strip">${strip}</div>` +
+    // Copy: the spoken script alone, or everything per shot with times (script + on-screen text).
+    copyTexts = {
+      script: d.script.map(([, , t]) => t).join('\n'),
+      full: [...[current?.title, current?.url].filter(Boolean), '', ...d.scenes.map((s, i) => {
+        const say = said[i].join(' ');
+        if (!say && !s.text) return '';
+        return `[${fmt(s.start)}] ${say || '(대사 없음)'}` + (s.text ? `\n   화면: ${s.text}` : '');
+      }).filter(Boolean)].join('\n').trim(),
+    };
+    const copyBtns = `<div class="copyrow">${d.script.length ? '<button class="ghost" data-copy="script">대본 복사</button>' : ''}<button class="ghost" data-copy="full">시간·화면 글자까지 복사</button></div>`;
+    box.innerHTML = `<div class="note">컷 ${d.scenes.length}개 · 말: ${how} · 화면 글자: 이미지 인식</div>${copyBtns}<div class="strip">${strip}</div>` +
       (lines || '<div class="muted">말소리도 화면 글자도 없는 영상이에요.</div>');
   } catch (e) {
     if (seq === openSeq) box.innerHTML = `<div class="muted">분석하지 못했어요: ${esc(e.message)}</div>`;
@@ -793,6 +806,27 @@ $('#grid').addEventListener('mouseover', (e) => {
   c.addEventListener('mouseleave', () => c.querySelector('iframe')?.remove(), { once: true });
 });
 
+let copyTexts = {};
+function toast(msg) {
+  let t = $('#toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.append(t); }
+  t.textContent = msg; t.hidden = false;
+  clearTimeout(t._h); t._h = setTimeout(() => (t.hidden = true), 1800);
+}
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {}
+  // Older phones / no clipboard permission: select a hidden textarea and copy.
+  const ta = Object.assign(document.createElement('textarea'), { value: text });
+  ta.style.cssText = 'position:fixed;opacity:0'; document.body.append(ta); ta.select();
+  const ok = document.execCommand('copy'); ta.remove(); return ok;
+}
+$('#scenes').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-copy]');
+  if (!b) return;
+  e.stopPropagation();
+  const text = copyTexts[b.dataset.copy];
+  toast(text && (await copyText(text)) ? (b.dataset.copy === 'script' ? '대본을 복사했어요' : '시간·화면 글자까지 복사했어요') : '복사하지 못했어요');
+}, true);
 $('#scenes').onclick = (e) => {
   const row = e.target.closest('[data-s]');
   if (row && !$('#player video') && current?.src === 'yt') { // no local file: jump the YouTube player instead

@@ -59,6 +59,7 @@ npx wrangler d1 execute ref-insta --remote --file=schema.sql
 npx wrangler secret put APP_PASSWORD        # site password (any user name in the login prompt)
 npx wrangler secret put FIRECRAWL_API_KEY
 npx wrangler secret put ANALYZER_TOKEN      # same value as "token" in .cloud.json
+npx wrangler secret put YOUTUBE_API_KEY     # optional: YouTube search with the PC off (YouTube Data API v3, 100 searches/day free)
 npx wrangler deploy
 ```
 
@@ -78,6 +79,7 @@ Only one PC is the analyzer at a time — the last one to start wins.
 - `WHISPER_MODEL` — ggml model path (default `~/.cache/whisper/ggml-small-q5_1.bin`)
 - `PORT` — default 5173
 - `CLOUDFLARED` — path to `cloudflared` if it's not on PATH
+- `YOUTUBE_API_KEY` — YouTube Data API key; YouTube search uses it first, then yt-dlp
 
 ## Local data (git-ignored)
 

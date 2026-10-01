@@ -3,7 +3,7 @@
 // proxied to the analysis PC (server.mjs), which registers its Cloudflare Tunnel URL here via /api/analyzer.
 //
 // Secrets: APP_PASSWORD (site login), FIRECRAWL_API_KEY, ANALYZER_TOKEN (shared with the PC's .cloud.json).
-import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoardItem, fetchStats, SOURCES, REF_OK } from './search.mjs';
+import { handleSearch, firecrawlSearch, firecrawlCredits, creditStatus, newBoardItem, fetchStats, youtubeApiSearch, firstOf, SOURCES, REF_OK } from './search.mjs';
 
 const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', ...headers } });
@@ -71,15 +71,18 @@ export default {
         set: (k, v) => env.DB.prepare('INSERT OR REPLACE INTO searches (k, v) VALUES (?, ?)').bind(k, JSON.stringify(v)).run(),
       };
       const readCredits = () => firecrawlCredits(env.FIRECRAWL_API_KEY);
-      // While the analysis PC is on, YouTube is searched there with yt-dlp (no credits); otherwise via Firecrawl.
+      // YouTube without credits: the YouTube Data API (works with the PC off; 100 searches/day), then the PC's
+      // yt-dlp if it's on. Only if both fail does YouTube go through Firecrawl.
       const pc = (p === '/api/search' || p === '/api/credits') && (await analyzer(env));
-      const free = pc && {
-        yt: async (q) => {
+      const ytFree = [
+        env.YOUTUBE_API_KEY && ((q, qdr) => youtubeApiSearch(env.YOUTUBE_API_KEY, q, qdr)),
+        pc && (async (q) => {
           const r = await fetch(`${pc}/api/ytsearch?q=${encodeURIComponent(q)}`, { headers: { 'x-ref-token': env.ANALYZER_TOKEN } });
           if (!r.ok) throw new Error('PC search failed');
           return r.json();
-        },
-      };
+        }),
+      ].filter(Boolean);
+      const free = ytFree.length ? { yt: firstOf(ytFree) } : undefined;
       if (m === 'GET' && p === '/api/credits') return json(await creditStatus(store, readCredits, free));
       if (m === 'GET' && p === '/api/search') {
         const r = await handleSearch(url.searchParams, (q, qdr) => firecrawlSearch(env.FIRECRAWL_API_KEY, q, qdr), store, readCredits, free);

@@ -269,3 +269,44 @@ export function fetchStats(src, ref) {
     return {};
   });
 }
+
+// YouTube Data API (official, free key): search.list costs 1 call of the 100/day "search queries" quota,
+// videos.list adds view/like/comment counts. Lets the Cloudflare Worker search YouTube with the PC off.
+// order=viewCount + videoDuration=short (<4 min) = most-viewed short videos first.
+const QDR_DAYS = { w: 7, m: 31, y: 366 };
+const isoSeconds = (d) => { const m = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/.exec(d || ''); return m ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : null; };
+const unescapeHtml = (t) => t.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+export async function youtubeApiSearch(key, q, qdr) {
+  const p = new URLSearchParams({ part: 'snippet', type: 'video', videoDuration: 'short', order: 'viewCount', maxResults: '25', q, regionCode: 'KR', relevanceLanguage: 'ko', key });
+  if (QDR_DAYS[qdr]) p.set('publishedAfter', new Date(Date.now() - QDR_DAYS[qdr] * DAY).toISOString());
+  const r = await fetch('https://www.googleapis.com/youtube/v3/search?' + p);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error?.message || `YouTube API ${r.status}`); // e.g. daily quota used up
+  const ids = (j.items || []).map((i) => i.id?.videoId).filter(Boolean);
+  if (!ids.length) return [];
+  const v = await (await fetch('https://www.googleapis.com/youtube/v3/videos?' + new URLSearchParams({ part: 'statistics,contentDetails', id: ids.join(','), key }))).json();
+  const byId = new Map((v.items || []).map((x) => [x.id, x]));
+  return (j.items || [])
+    .filter((i) => i.id?.videoId)
+    .map((i) => {
+      const x = byId.get(i.id.videoId);
+      const n = (k) => (x?.statistics?.[k] != null ? Number(x.statistics[k]) : null);
+      return {
+        src: 'yt', ref: i.id.videoId, url: `https://www.youtube.com/shorts/${i.id.videoId}`,
+        title: unescapeHtml(i.snippet?.title || ''), channel: i.snippet?.channelTitle || '', date: Date.parse(i.snippet?.publishedAt) || null,
+        views: n('viewCount'), likes: n('likeCount'), comments: n('commentCount'), statsDone: true,
+        seconds: isoSeconds(x?.contentDetails?.duration),
+      };
+    })
+    .filter((v) => v.seconds == null || v.seconds <= 180)
+    .sort(byPopular);
+}
+
+// Try free YouTube searches in order; the first that works wins (callers fall back to Firecrawl if none do).
+export const firstOf = (fns) => async (q, qdr) => {
+  let err;
+  for (const f of fns) {
+    try { return await f(q, qdr); } catch (e) { err = e; }
+  }
+  throw err;
+};

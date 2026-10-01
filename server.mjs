@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { execFile, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats, byPopular } from './search.mjs';
+import { SOURCES, REF_OK, linkOk, cached, firecrawlSearch, firecrawlCredits, creditStatus, handleSearch, newBoardItem, PER_SOURCE, fetchStats, byPopular, youtubeApiSearch, firstOf } from './search.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const WIN = process.platform === 'win32';
@@ -204,7 +204,8 @@ async function youtubeFree(q) {
     .sort(byPopular)
     .slice(0, 20);
 }
-const free = { yt: youtubeFree };
+// With a YouTube Data API key (YOUTUBE_API_KEY) the official search goes first; yt-dlp is the fallback.
+const free = { yt: firstOf([process.env.YOUTUBE_API_KEY && ((q, qdr) => youtubeApiSearch(process.env.YOUTUBE_API_KEY, q, qdr)), youtubeFree].filter(Boolean)) };
 
 // Firecrawl balance: REST API with a key, else the logged-in CLI (same shape: remainingCredits, planCredits, billingPeriodEnd).
 const readCredits = async () => {
